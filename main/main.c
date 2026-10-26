@@ -37,8 +37,8 @@ static void key_poll(lv_timer_t *t)
         page_key((bsp_btn_t)e.btn, (bsp_btn_ev_t)e.ev);
 }
 
-// 省电：60 秒没按键背光调到 3%（极暗），按任意键恢复
-#define DIM_AFTER_US (60LL * 1000000)
+// 省电：30 秒没按键背光调到 3%（极暗），按任意键恢复
+#define DIM_AFTER_US (30LL * 1000000)
 #define DIM_LEVEL    3
 static volatile int64_t s_last_key_us, s_wake_us;
 static volatile bool s_dimmed, s_wake_req;
