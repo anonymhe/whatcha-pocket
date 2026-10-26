@@ -45,6 +45,7 @@ static atomic_bool s_updated;
 static volatile bool s_fast = true;
 static volatile bool s_conn = false;
 static volatile bool s_started = false;
+static volatile bool s_stopped = false;   // 省电：10 分钟无按键后停了广播,按键后由 ble_sync_resume 恢复
 static esp_timer_handle_t s_slow_timer;
 
 static uint8_t  s_buf[MAX_JSON + 1];
@@ -249,8 +250,34 @@ static void slow_cb(void *arg)
     ESP_LOGI(TAG, "adv slow");
 }
 
+// 省电：长时间无按键后停掉广播(连接中不动,免得打断正在进行的同步)。
+// 与 restart_adv/slow_cb/poke 一样只在 esp_timer/LVGL 任务里被调,彼此不并发。
+void ble_sync_stop(void)
+{
+    if (!s_started || s_conn || s_stopped) return;   // 连接中保留广播,不打断同步
+    if (s_slow_timer) esp_timer_stop(s_slow_timer);
+    ble_gap_adv_stop();
+    s_stopped = true;
+    ESP_LOGI(TAG, "adv stop");
+}
+
+// 省电：按键后恢复广播并切回快速窗口。
+void ble_sync_resume(void)
+{
+    if (!s_stopped) return;
+    s_stopped = false;
+    s_fast = true;
+    if (s_slow_timer) {
+        esp_timer_stop(s_slow_timer);
+        esp_timer_start_once(s_slow_timer, FAST_WINDOW_US);
+    }
+    restart_adv();
+    ESP_LOGI(TAG, "adv resume");
+}
+
 void ble_sync_poke(void)
 {
+    if (s_stopped) { ble_sync_resume(); return; }   // 停播后第一下按键先把广播救回来(已切回快速窗口)
     if (s_slow_timer) {
         esp_timer_stop(s_slow_timer);
         esp_timer_start_once(s_slow_timer, FAST_WINDOW_US);

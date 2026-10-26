@@ -40,16 +40,30 @@ static void key_poll(lv_timer_t *t)
 // 省电：30 秒没按键背光调到 3%（极暗），按任意键恢复
 #define DIM_AFTER_US (30LL * 1000000)
 #define DIM_LEVEL    3
+// 省电：10 分钟没按键，停蓝牙广播 + 下电音频 codec（都可重启）；按任意键恢复。
+#define SLEEP_AFTER_US (10LL * 60 * 1000000)
 static volatile int64_t s_last_key_us, s_wake_us;
 static volatile bool s_dimmed, s_wake_req;
+static volatile bool s_slept;        // 深度省电：广播已停 + codec 已下电
 static volatile bool s_keep_awake;   // 番茄猹计时中：不调暗
 static void dim_tick(lv_timer_t *t)
 {
     (void)t;
-    if (s_wake_req) { s_wake_req = false; bsp_display_backlight(100); s_dimmed = false; return; }
+    if (s_wake_req) {
+        s_wake_req = false;
+        bsp_display_backlight(100);
+        s_dimmed = false;
+        if (s_slept) { sfx_resume(); s_slept = false; }   // 蓝牙已在 on_key→ble_sync_poke 里恢复
+        return;
+    }
     if (!s_dimmed && s_ready && !s_keep_awake && esp_timer_get_time() - s_last_key_us > DIM_AFTER_US) {
         bsp_display_backlight(DIM_LEVEL);
         s_dimmed = true;
+    }
+    if (!s_slept && s_ready && !s_keep_awake && esp_timer_get_time() - s_last_key_us > SLEEP_AFTER_US) {
+        ble_sync_stop();
+        sfx_sleep();
+        s_slept = true;
     }
 }
 
@@ -58,6 +72,7 @@ void power_keep_awake(bool on)   // 只在 LVGL 任务里调
     s_last_key_us = esp_timer_get_time();
     s_keep_awake = on;
     if (on && s_dimmed) { bsp_display_backlight(100); s_dimmed = false; }
+    if (on && s_slept) { ble_sync_resume(); sfx_resume(); s_slept = false; }   // 常亮前确保已从深度省电恢复
 }
 
 static void on_key(bsp_btn_t btn, bsp_btn_ev_t ev, void *user)
@@ -68,8 +83,8 @@ static void on_key(bsp_btn_t btn, bsp_btn_ev_t ev, void *user)
     int64_t now = esp_timer_get_time();
     if (s_skip_us && now - s_skip_us < 600000) return;
     s_last_key_us = now;
-    ble_sync_poke();
-    if (s_dimmed) { s_wake_req = true; s_wake_us = now; return; }   // 调暗时第一下只用来点亮
+    ble_sync_poke();   // 蓝牙立即恢复（停播后第一下按键会在 poke 里 resume，非阻塞）
+    if (s_dimmed || s_slept) { s_wake_req = true; s_wake_us = now; return; }   // 调暗/深度省电时第一下只用来唤醒
     if (s_wake_us && now - s_wake_us < 600000) return;               // 同一下的松开也丢掉
     key_evt_t e = { (uint8_t)btn, (uint8_t)ev };
     xQueueSend(s_keyq, &e, 0);

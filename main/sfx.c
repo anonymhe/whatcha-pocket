@@ -86,6 +86,8 @@ static volatile int  s_status = 0;
 static volatile int  s_req = -1;       // 待播：SFX id 或 DYN_*
 static volatile int  s_req_arg;
 static volatile int  s_pending = -1;   // 音频还没就绪时先记下（开机音）
+static volatile bool s_sleep_req, s_resume_req;   // 省电：10 分钟无按键停 codec / 按键后重开（只由 codec 所属的 sfx 任务执行）
+static bool s_slept;                              // codec 已下电（只在 sfx 任务里读写）
 static int16_t s_buf[CHUNK];
 static uint32_t s_lfsr = 0xACE1u;
 static float s_vol = 1.0f;           // 动态音的音量系数（打字轻重）
@@ -165,10 +167,28 @@ static void sfx_task(void *arg)
     s_pending = -1;
     ESP_LOGI(TAG, "ready");
     for (;;) {
-        if (s_req < 0) ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        if (s_req < 0 && !s_sleep_req && !s_resume_req) ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        // 省电：codec 下电 / 重开都在本任务里做,避免和播放写入 codec 抢同一个设备。
+        if (s_resume_req) {
+            s_resume_req = false;
+            if (s_slept) {
+                if (bsp_audio_set_format(SR, 16, 1) == ESP_OK) {
+                    bsp_audio_set_volume(100);
+                    s_slept = false;
+                    ESP_LOGI(TAG, "resume");
+                } else {
+                    ESP_LOGW(TAG, "resume: set_format failed");
+                }
+            }
+        }
+        if (s_sleep_req) {
+            s_sleep_req = false;
+            if (!s_slept) { bsp_audio_stop(); s_slept = true; ESP_LOGI(TAG, "sleep"); }
+        }
         int id = s_req, arg2 = s_req_arg;
         s_req = -1;
         if (id < 0) continue;
+        if (s_slept) continue;   // codec 已下电：丢弃播放请求,等按键触发 sfx_resume 重开
         const note_t *seq = NULL;
         if (id == DYN_GU) {
             static const float SCALE[8] = { 1.0f, 1.125f, 1.25f, 1.3333f, 1.5f, 1.6667f, 1.875f, 2.0f };
@@ -210,6 +230,20 @@ static void request(int id, int arg)
     if (!s_ready) { s_pending = id; s_req_arg = arg; return; }
     s_req_arg = arg;
     s_req = id;
+    xTaskNotifyGive(s_task);
+}
+
+void sfx_sleep(void)
+{
+    if (!s_task || !s_ready) return;
+    s_sleep_req = true;
+    xTaskNotifyGive(s_task);
+}
+
+void sfx_resume(void)
+{
+    if (!s_task || !s_ready) return;
+    s_resume_req = true;
     xTaskNotifyGive(s_task);
 }
 

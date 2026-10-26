@@ -155,6 +155,18 @@ esp_err_t bsp_audio_set_format(uint32_t hz, uint8_t bits, uint8_t ch) {
     return ESP_OK;
 }
 
+esp_err_t bsp_audio_stop(void) {
+    // 可重启的下电:只 close 当前已打开的 codec,保留 s_dev / I2S 通道 / I2C 总线,
+    // 之后 bsp_audio_set_format() 会重新 open(其内部会补一次 i2s_channel_enable)。
+    // 清掉 s_opened 后,下次 set_format 的"同格式复用"判断必定走重开路径。
+    if (s_opened) {
+        esp_codec_dev_close(s_dev);
+        s_opened = false;
+        ESP_LOGI(TAG, "codec 停止(可重启)");
+    }
+    return ESP_OK;
+}
+
 esp_err_t bsp_audio_write(const void *pcm, size_t bytes) {
     if (!s_dev) return ESP_ERR_INVALID_STATE;
     return esp_codec_dev_write(s_dev, (void *)pcm, bytes) == 0 ? ESP_OK : ESP_FAIL;

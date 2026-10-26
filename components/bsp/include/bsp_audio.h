@@ -16,6 +16,11 @@ esp_err_t bsp_audio_init(void);
 //   音调和速度都快一倍。故本函数在格式变化时先 close 再 open。
 esp_err_t bsp_audio_set_format(uint32_t hz, uint8_t bits, uint8_t ch);
 
+// 省电：关闭已打开的 codec 设备(可重启的下电)。只 close 当前 codec 设备并清掉"已打开"
+// 记录,【不】删除 s_dev、I2S 通道或 I2C 总线,因此之后再调 bsp_audio_set_format() 即可
+// 走原有 open 路径重新把 codec 打开(该路径会重新 enable I2S 通道)。已关闭/未初始化时为空操作。
+esp_err_t bsp_audio_stop(void);
+
 // 播放 / 录音。bytes 为字节数(16bit 单声道时 = 采样数 x 2)。
 esp_err_t bsp_audio_write(const void *pcm, size_t bytes);
 esp_err_t bsp_audio_read(void *pcm, size_t bytes);

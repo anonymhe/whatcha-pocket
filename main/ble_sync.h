@@ -18,4 +18,6 @@ void        ble_sync_start(void);          // main 里 storage_init 之后调一
 const char *ble_sync_device_id(void);      // 6 位大写十六进制
 void        profile_load(profile_t *p);    // 从 NVS 读
 bool        ble_sync_take_updated(void);
-void        ble_sync_poke(void);           // 有人按键：蓝牙切回快速广播 2 分钟（在按键回调里调）   // 有新同步返回 true 并清标志（LVGL 线程里轮询）
+void        ble_sync_poke(void);           // 有人按键：蓝牙切回快速广播 2 分钟（在按键回调里调）；停播后第一下按键会自动恢复广播   // 有新同步返回 true 并清标志（LVGL 线程里轮询）
+void        ble_sync_stop(void);           // 省电：长时间无按键后停掉广播（连接中不动，不打断同步）
+void        ble_sync_resume(void);         // 省电：恢复广播并切回快速窗口（poke 里会自动调用）

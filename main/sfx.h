@@ -22,6 +22,8 @@ typedef enum {
 } sfx_id_t;
 
 void sfx_init(void);
+void sfx_sleep(void);        // 省电：下电音频 codec（可重启）。只发信号，重开由 sfx 任务做，非阻塞
+void sfx_resume(void);       // 省电：按键后重新打开 codec，恢复发声。只发信号，非阻塞
 void sfx_play(sfx_id_t id);
 void sfx_gu(int step);       // 木鱼：step=0 基础音，连击时 1..7 沿大调音阶爬一个八度，之后保持最高音
 void sfx_key(int vol, int hz);   // 开机打字：vol 0..255 轻重，hz「咚」的音高
