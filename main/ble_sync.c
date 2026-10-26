@@ -40,8 +40,8 @@ static uint8_t     s_addr_type;
 static uint16_t    s_res_handle;
 static atomic_bool s_updated;
 
-// 省电：开机和每次按键后 2 分钟内快速广播（200-300ms），之后放慢到 1-1.5s；连接中不动广播
-#define FAST_WINDOW_US (120LL * 1000000)
+// 省电：开机和每次按键后 30 秒内快速广播（1s，与亮屏时长一致），之后放慢到 10s；连接中不动广播
+#define FAST_WINDOW_US (30LL * 1000000)
 static volatile bool s_fast = true;
 static volatile bool s_conn = false;
 static volatile bool s_started = false;
@@ -226,8 +226,8 @@ static void advertise(void)
     struct ble_gap_adv_params p = { 0 };
     p.conn_mode = BLE_GAP_CONN_MODE_UND;
     p.disc_mode = BLE_GAP_DISC_MODE_GEN;
-    p.itvl_min  = s_fast ? BLE_GAP_ADV_ITVL_MS(200) : BLE_GAP_ADV_ITVL_MS(1000);
-    p.itvl_max  = s_fast ? BLE_GAP_ADV_ITVL_MS(300) : BLE_GAP_ADV_ITVL_MS(1500);
+    p.itvl_min  = s_fast ? BLE_GAP_ADV_ITVL_MS(1000) : BLE_GAP_ADV_ITVL_MS(10000);
+    p.itvl_max  = s_fast ? BLE_GAP_ADV_ITVL_MS(1000) : BLE_GAP_ADV_ITVL_MS(10000);
     if (rc == 0) rc = ble_gap_adv_start(s_addr_type, NULL, BLE_HS_FOREVER, &p, gap_event, NULL);
     if (rc != 0 && rc != BLE_HS_EALREADY) ESP_LOGE(TAG, "advertise rc=%d", rc);
 }
