@@ -312,7 +312,7 @@ static void home_key(bsp_btn_t btn, bsp_btn_ev_t ev)
     if (ev != BSP_BTN_CLICK) return;
     if (btn == BSP_BTN_UP)   { s_sel = (s_sel + 5) % 6; sfx_play(SFX_NAV); }
     if (btn == BSP_BTN_DOWN) { s_sel = (s_sel + 1) % 6; sfx_play(SFX_NAV); }
-    if (btn == BSP_BTN_OK) { sfx_play(SFX_OK); page_intro_set(s_sel + 1); page_open(7); return; }
+    if (btn == BSP_BTN_OK) { sfx_play(SFX_OK); page_intro_set(s_sel + PAGE_APP_BASE); page_open(PAGE_INTRO); return; }
     refresh_sel();
 }
 
