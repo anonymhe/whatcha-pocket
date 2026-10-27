@@ -2,7 +2,6 @@
 #pragma once
 typedef enum {
     SFX_GU = 0,      // 木鱼「咕」
-    SFX_GU_COMBO,    // 兼容旧调用，等同 SFX_GU
     SFX_NAV,         // 上下选择：短「嘀」
     SFX_OK,          // 确认进入：两音上跳
     SFX_BACK,        // 返回：两音下落

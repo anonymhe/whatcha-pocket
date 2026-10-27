@@ -47,7 +47,6 @@ static const lv_image_dsc_t *POOL[] = {
 };
 #define N (sizeof POOL / sizeof POOL[0])
 static int s_pick = -1;
-int cha_pool_size(void) { return (int)N; }
 const lv_image_dsc_t *cha_random_72(void)
 {
     int n = 0;

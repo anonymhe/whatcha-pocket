@@ -3,4 +3,3 @@
 #include "lvgl.h"
 const lv_image_dsc_t *cha_random_72(void);   // 抽一只（每次调用都换）
 const lv_image_dsc_t *cha_reroll_72(void);   // 同上，给长按手动换用
-int cha_pool_size(void);
