@@ -3,10 +3,14 @@
 #include "pages.h"   // 颜色常量 C_BG / C_GREEN / C_GOLD / C_TEXT / C_MUTED / C_CARD / C_LINE、page_t
 #include "lvgl.h"
 
-// 字体：中文只能用 font_fusion12（12px 像素字，约 6800 个常用字 + ASCII），
+// 字体：中文正文用 font_fusion12（12px 像素字，GB2312 常用字 + ASCII），大标题用
+//      font_fusion20。另有更小的 10px font_fusion10（main/font_fusion10.c），
+//      默认不编入；要用先把它加回 main/CMakeLists.txt 再 LV_FONT_DECLARE。
 //      没收录的字会显示成方块，写完跑 python3 tools/check_glyphs.py 检查。
 //      font_ps8 / font_ps16 是英文数字像素字，只有 ASCII，适合分数、计时。
+//      字体源用 python3 tools/gen_fonts.py 从 assets/font 的 TTF 重新生成。
 LV_FONT_DECLARE(font_fusion12);
+LV_FONT_DECLARE(font_fusion20);
 LV_FONT_DECLARE(font_ps8);
 LV_FONT_DECLARE(font_ps16);
 

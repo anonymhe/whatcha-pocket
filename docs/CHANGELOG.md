@@ -6,6 +6,8 @@
 
 ## Unreleased
 
+- Rebuilt the embedded pixel fonts from the Fusion Pixel typeface: Chinese text now uses a full GB2312 glyph set (plus the handful of symbols and nickname variants the UI relies on) at the standard 12 px size, and the large headline font was regenerated at 20 px as an exact 2x of the 10 px grid, replacing the previous 24 px headline font. A compact 10 px body font is also available as source but left out of the build to save Flash until something needs it. A reproducible generator (`tools/gen_fonts.py`) rebuilds every font and its glyph-coverage table from the checked-in source typefaces.
+
 - Reworked the home-screen identity area into an RPG character-card layout: the nickname and tier badge are left-aligned (24 px name; tier labels remapped to "用户 - Spectator", "观猹员 - Player", and "观猹员 - Player No.1"). Battery now reads as an HP bar with a green/amber/red fill and percentage, replacing the top-bar battery readout. Player stats show raw counts beside pixel icons: ATK (reviews), DEF (posts), and Coins (upvotes), each rendered with a runtime dot-matrix icon helper so no image-conversion toolchain is needed.
 
 - Removed the unused hardware-validation demo pages and their assets from `main/` (Wi-Fi scan, BLE advertising, low-power sleep, display, button, audio, battery pages, the shared radio setup, and the crash-log helper) along with unreferenced fonts, icons, and images. The firmware keeps the page router in `pages.c` with feature pages (`page_*.c`) and community apps (`main/apps/`); the home page module was renamed from `demo_watcha.c` to `page_home.c` with no behavior change. Documentation (capability tables, hardware guide, AI guides) was updated to match.

@@ -67,7 +67,7 @@ idf_component_register(
          "page_muyu.c"
          "page_1024.c"
          "font_fusion12.c"
-         "font_fusion24.c"
+         "font_fusion20.c"
          "font_ps8.c"
          "font_ps16.c"
          "ic_clover.c"

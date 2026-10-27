@@ -11,7 +11,7 @@
 LV_FONT_DECLARE(font_fusion12);
 LV_FONT_DECLARE(font_ps8);
 LV_FONT_DECLARE(font_ps16);
-LV_FONT_DECLARE(font_fusion24);
+LV_FONT_DECLARE(font_fusion20);
 #include "cha_pool.h"
 LV_IMAGE_DECLARE(ic_clover);
 LV_IMAGE_DECLARE(ic_tomato);
@@ -210,7 +210,7 @@ static void apply_profile(void)
         char nick[sizeof p.nick];
         memcpy(nick, p.nick, sizeof nick);
         nick[sizeof nick - 1] = 0;
-        if (!is_ascii(nick)) strip_missing(nick, &font_fusion24);
+        if (!is_ascii(nick)) strip_missing(nick, &font_fusion20);
         if (!nick[0]) strcpy(nick, "--");                 // 全是 emoji 之类：去完就空了
         lv_label_set_text(s_name, nick);
         lv_obj_set_style_text_color(s_name, lv_color_hex(p.tier == TIER_GOLD ? C_GOLD : C_TEXT), 0);
@@ -282,7 +282,7 @@ static void home_enter(void)
     label(s_scr, "WATCHA", &font_ps8, C_GREEN, INFO_X, TITLE_Y);
 
     // 角色名（24px 左对齐，超宽省略）
-    s_name = label(s_scr, "", &font_fusion24, C_TEXT, INFO_X, NAME_Y);
+    s_name = label(s_scr, "", &font_fusion20, C_TEXT, INFO_X, NAME_Y);
     lv_obj_set_width(s_name, 240 - INFO_X - 6);
     lv_label_set_long_mode(s_name, LV_LABEL_LONG_DOT);
 

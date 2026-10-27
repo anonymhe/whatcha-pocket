@@ -6,10 +6,9 @@
 #include <stdio.h>
 
 LV_FONT_DECLARE(font_fusion12);
-LV_FONT_DECLARE(font_fusion12);
 LV_FONT_DECLARE(font_ps8);
 LV_FONT_DECLARE(font_ps16);
-LV_FONT_DECLARE(font_fusion24);
+LV_FONT_DECLARE(font_fusion20);
 
 /* 本命 AI 卡片左侧的 32x32 方块：观猹用自己的 logo；其他产品不放第三方 logo，
    用像素文字铭牌（像元素周期表的格子），顺序同 RESULTS */
@@ -207,13 +206,13 @@ static void build_result(void)
     lv_obj_align(sub, LV_ALIGN_TOP_MID, 0, 46);
 
     /* 人格名：页面上最大最显眼 */
-    lv_obj_t *nml = mk_label(s_scr, ri->name, &font_fusion24, C_GREEN);
+    lv_obj_t *nml = mk_label(s_scr, ri->name, &font_fusion20, C_GREEN);
     lv_obj_align(nml, LV_ALIGN_TOP_MID, 0, 62);
 
     /* 金句：24px，1-2 行（数据里用 \n 手动断行），在 y=86..206 内垂直居中 */
     int lines = 1;
     for (const char *p = ri->desc; *p; p++) if (*p == '\n') lines++;
-    lv_obj_t *dl = mk_label(s_scr, ri->desc, &font_fusion24, C_TEXT);
+    lv_obj_t *dl = mk_label(s_scr, ri->desc, &font_fusion20, C_TEXT);
     lv_obj_set_style_text_align(dl, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_line_space(dl, 4, 0);
     lv_obj_set_width(dl, 232);
