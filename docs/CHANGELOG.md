@@ -6,6 +6,10 @@
 
 ## Unreleased
 
+- Made the Chinese-glyph coverage check font-aware so it catches a bug it previously missed: the larger 24 px headline font covers only a small subset of characters, and text that looked fine in the editor could still render as empty boxes on the device. The check now validates each file against the exact font it uses and scans every UI source file, not just one folder; documented all shipped pixel fonts, their coverage limits, and the open-source font they are built from.
+
+- Added a check that flags image and font assets compiled into the firmware but never used, so unused data stops wasting limited Flash. Using it, dropped a 16 px headline font that nothing referenced from the build.
+
 - Hardened the audio power-down used by the inactivity timeout: the codec now runs the full ES8311 suspend register sequence with readback verification and a retry, replacing the previous plain codec close, so the codec reliably reaches its low-power state and resumes cleanly on the next key press. Also added verified CW2017 battery-gauge sleep and deep-sleep audio pin isolation for future shutdown paths.
 
 - Added an LVGL Chinese-text guide describing the shipped `font_fusion12` CJK font and ASCII `font_ps8`/`font_ps16`, how to stay inside their coverage with `check_glyphs.py`, and a missing-glyph troubleshooting order; corrected the coding conventions, which still described the upstream Montserrat-only baseline.

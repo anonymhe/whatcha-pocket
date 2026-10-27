@@ -12,10 +12,14 @@
 
 | 字体 | 声明处 | 覆盖 | 用途 |
 | --- | --- | --- | --- |
-| `font_fusion12` | [`main/apps/app_ui.h`](../../../main/apps/app_ui.h) | 约 6,800 个常用汉字加 ASCII，12 px 像素风 | 所有中文 UI 文案 |
+| `font_fusion12` | `main/*.c` 内 `LV_FONT_DECLARE`（如 [`main/pages.c`](../../../main/pages.c)） | 约 6,800 个常用汉字加 ASCII，12 px 像素风 | 所有中文 UI 文案 |
+| `font_fusion24` | [`main/page_type.c`](../../../main/page_type.c)、[`main/page_fortune.c`](../../../main/page_fortune.c) | `font_fusion12` 的约 650 字子集，24 px 像素风 | 仅用于结果/标题文案，且只能用子集内的字 |
+| `font_fusion16` | 文件在磁盘但未编译（作为死 Flash 已移出构建） | 同样的约 650 字子集，16 px | 无；`font_fusion16.c` 保留备查。仅当某页面开始使用时才重新加回 `main/CMakeLists.txt` |
 | `font_ps8` / `font_ps16` | `main/apps/app_ui.h` | 只有 ASCII（数字、拉丁字母），8/16 px 像素风 | 分数、计时、数字读数 |
 
-`font_fusion12` 的收录字表见 [`docs/watcha/fusion12_chars.txt`](../../watcha/fusion12_chars.txt)。[`sdkconfig.defaults`](../../../sdkconfig.defaults) 启用了 `CONFIG_LV_FONT_UNSCII_8` 与 `CONFIG_LV_FONT_UNSCII_16` 作为 ASCII 像素兜底；Montserrat 默认字体不含中文字形，这里不是显示字体。
+三套 `font_fusion*` 都从同一个 `fusion12.ttf` 生成；`font_fusion16` / `font_fusion24` 为节省 Flash 故意只收录一小撮符号子集。各自的子集记录在对应 `main/font_fusion*.c` 头部的 `Opts:` 注释里，`check_glyphs.py` 直接读取这些注释。`font_fusion12` 的收录字集另外以可读清单形式列在 [`docs/watcha/fusion12_chars.txt`](../../watcha/fusion12_chars.txt)。[`sdkconfig.defaults`](../../../sdkconfig.defaults) 启用了 `CONFIG_LV_FONT_UNSCII_8` 与 `CONFIG_LV_FONT_UNSCII_16` 作为 ASCII 像素兜底；Montserrat 默认字体不含中文字形，这里不是显示字体。
+
+由于 `font_fusion24` 只收录子集，一个字可能在 `font_fusion12` 里有、用 24 px 画却是方块。凡用 `font_fusion24` 渲染的文本（目前是 `page_type.c` 的结果名/金句表和 `page_fortune.c` 的标题）都必须停留在该子集内。下文的字形门禁会按文件强制这一点。
 
 不在 `font_fusion12` 内的字在设备上会显示成方块。改源文件编码不会补上字体原本就没有的字形，扩大 LVGL 内存池同样补不了字。
 
@@ -41,14 +45,14 @@ UTF-8 只规定怎样把字节解码成码点，不会安装字库。源文件�
 2. 运行覆盖门禁，把方块字换成收录了的字：
 
    ```bash
-   python3 tools/check_glyphs.py            # 检查 main/apps/
+   python3 tools/check_glyphs.py            # 检查 main/ 与 main/apps/
    python3 tools/check_glyphs.py main/xxx.c # 检查指定文件
    ```
 
-   它会报出每一处 `font_fusion12` 没有收录的字符串字面量字符，带文件和行号。已知需手动替换的缺字：`…`（用 `...`）和 `◀`。
+   它会报出每一处该字体没有收录的字符串字面量字符，带文件和行号。门禁按字体校验：每个文件对照它引用的**最小**那套 `font_fusion*`，所以 `font_fusion24` 文件里的字面量（例如 `page_type.c` 的结果表）是按 24 px 子集校验，而非完整 12 px 字集。已知需手动替换的缺字：`…`（用 `...`）和 `◀`。
 3. 让动态内容（姓名、网络文本）停留在收录字集内，或为范围外的内容显示有意设计的替代。固定菜单子集不保证支持任意用户或服务器文本；不要悄悄丢弃未知字符。
 
-`check_glyphs.py` 检查 C 字符串字面量；它不证明 `font_fusion12` 以外字体的真机显示，也不检查布局。把通过视为必要条件，而非充分条件。
+`check_glyphs.py` 检查 C 字符串字面量；它按文件对照该文件用到的最小字体校验，但无法跟踪经由变量传入的文本（例如运行时读取的表数据），也不证明真机显示、不检查布局。把通过视为必要条件，而非充分条件。
 
 ## 4. 在控件上选择字体
 
@@ -56,7 +60,8 @@ UTF-8 只规定怎样把字节解码成码点，不会安装字库。源文件�
 
 ```c
 #include "lvgl.h"
-#include "app_ui.h"   /* LV_FONT_DECLARE(font_fusion12) 等都在这里 */
+
+LV_FONT_DECLARE(font_fusion12);   /* 每个用到该字体的 .c 自行声明 */
 
 lv_obj_t *label = lv_label_create(parent);
 lv_obj_set_style_text_font(label, &font_fusion12, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -107,7 +112,11 @@ lv_font_conv \
   --output main/font_fusion12.c
 ```
 
-源字体没有的字形，不能靠填写码点生成。重新生成 `docs/watcha/fusion12_chars.txt` 以匹配新的覆盖，使 `check_glyphs.py` 保持准确；把字符清单与命令纳入版本管理；不要为补一个字就启用额外字号或整套 CJK 字体家族。输出要匹配 `dependencies.lock` 锁定的 LVGL 版本；首次先不压缩，避免解码器不匹配。参见 [LVGL 9.5 字体概览](https://docs.lvgl.io/9.5/main-modules/fonts/overview.html)。
+源字体没有的字形，不能靠填写码点生成。重新生成 `docs/watcha/fusion12_chars.txt` 以匹配新的覆盖，使 `check_glyphs.py` 保持准确；把字符清单与命令纳入版本管理；不要为补一个字就启用额外字号或整套 CJK 字体家族。若改动了 `font_fusion12` 收录的字，也要用同一 TTF 按各自字号重新生成 `font_fusion16` / `font_fusion24`，保持子集一致。输出要匹配 `dependencies.lock` 锁定的 LVGL 版本；首次先不压缩，避免解码器不匹配。参见 [LVGL 9.5 字体概览](https://docs.lvgl.io/9.5/main-modules/fonts/overview.html)。
+
+### 源字体与许可
+
+这些字体生成所用的 `fusion12.ttf` 是 TakWolf 的[缝合像素字体（Fusion Pixel Font）](https://github.com/TakWolf/fusion-pixel-font)，一套泛中日韩像素字体，以 [SIL 开放字体许可证 1.1](https://openfontlicense.org/)（`OFL-1.1`）发布。该项目原生提供 8/10/12 px 像素设计；12 px 是原生字号，所以 `font_fusion12` 显示清晰，而 `font_fusion16` / `font_fusion24` 是从该设计放大而来（24 px 恰好是 12 px 的整 2 倍，较干净；16 px 不是整数倍，会偏糊）。OFL-1.1 允许把生成的位图嵌入本固件；请保留许可声明，不要单独售卖字体文件。若从上游更新版重新生成，请在 `lv_font_conv` 命令旁记录发布版本（按日期编号，如 `2026.10.25`）。
 
 ## 8. 验证与交付边界
 
