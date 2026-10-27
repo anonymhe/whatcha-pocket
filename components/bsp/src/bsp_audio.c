@@ -8,6 +8,8 @@
 #include "es8311_codec.h"
 #include "driver/i2s_std.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 static const char *TAG = "bsp_audio";
 
@@ -145,6 +147,22 @@ esp_err_t bsp_audio_set_format(uint32_t hz, uint8_t bits, uint8_t ch) {
     int r = esp_codec_dev_open(s_dev, &fs);
     if (r != 0) { ESP_LOGE(TAG, "esp_codec_dev_open 失败: %d", r); return ESP_FAIL; }
 
+    // 消除开机/唤醒爆音:codec 刚上电时 DAC 电荷泵与 PA 还没稳定,立刻写入第一段
+    // 音频会听到"砰"的瞬态。这里先等它稳定,再灌一小段静音把 DAC 输出拉到零电平,
+    // 之后真正的音效从零电平起播,就不会有突跳的爆音。
+    vTaskDelay(pdMS_TO_TICKS(60));                 // 让 DAC/PA 上电稳定
+    {
+        int16_t silence[256] = { 0 };
+        size_t  frame_bytes = (size_t)bits / 8 * ch;
+        if (frame_bytes == 0) frame_bytes = 2;
+        size_t  total = (size_t)hz * frame_bytes / 20;   // 约 50ms 静音
+        while (total > 0) {
+            size_t n = total < sizeof silence ? total : sizeof silence;
+            if (esp_codec_dev_write(s_dev, silence, n) != 0) break;
+            total -= n;
+        }
+    }
+
     // ⚠ open 之后【不要】手动覆写 ES8311 的时钟分频寄存器(REG01~06):
     //   驱动已按采样率与 MCLK 精确算好,覆写会导致 ADC/DAC 时序错乱、录音回放全是杂音。
     //   这里只设麦克风模拟 PGA 增益。
@@ -160,6 +178,9 @@ esp_err_t bsp_audio_stop(void) {
     // 之后 bsp_audio_set_format() 会重新 open(其内部会补一次 i2s_channel_enable)。
     // 清掉 s_opened 后,下次 set_format 的"同格式复用"判断必定走重开路径。
     if (s_opened) {
+        // 下电/关机爆音无法在软件里消除:本板电源键是硬件直接断稳压器,MCU 收不到事件、
+        // 也没有电源锁存或功放使能 GPIO(BSP_I2S_PA_CTRL=-1,常通),来不及做静音收尾。
+        // 这里只负责可重启的 codec close(省电休眠 / 格式切换会用到),不处理关机爆音。
         esp_codec_dev_close(s_dev);
         s_opened = false;
         ESP_LOGI(TAG, "codec 停止(可重启)");
