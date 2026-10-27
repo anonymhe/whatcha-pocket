@@ -323,9 +323,14 @@ static void refresh_sel(void)
         lv_obj_set_style_border_width(s_cards[i], on ? 2 : 1, 0);
         lv_obj_set_style_bg_color(s_cards[i], lv_color_hex(on ? C_CARD : C_BG), 0);
         lv_obj_set_style_text_color(s_labels[i], lv_color_hex(on ? C_GREEN : C_TEXT), 0);
-        if (!ITEMS[i].glyph) {                        // 位图图标随选中变绿；点阵图标用固定配色
+        if (!ITEMS[i].glyph) {                        // 位图图标随选中变绿，未选为白
             lv_obj_set_style_image_recolor(s_icons[i], lv_color_hex(on ? C_GREEN : 0xFFFFFF), 0);
             lv_obj_set_style_image_recolor_opa(s_icons[i], LV_OPA_COVER, 0);
+        } else {                                      // 点阵图标：逐块重涂，与位图一致（选中绿 / 未选白）
+            uint32_t gc = on ? C_GREEN : 0xFFFFFF;
+            uint32_t n = lv_obj_get_child_count(s_icons[i]);
+            for (uint32_t k = 0; k < n; k++)
+                lv_obj_set_style_bg_color(lv_obj_get_child(s_icons[i], k), lv_color_hex(gc), 0);
         }
     }
 }
