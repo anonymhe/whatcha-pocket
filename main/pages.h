@@ -35,6 +35,7 @@ void page_home(void);                            // 回首页
 void page_intro_set(int target_idx);
 void page_key(bsp_btn_t btn, bsp_btn_ev_t ev);   // main.c 按键入口
 int  page_current(void);
+bool page_busy(void);                            // 切页转场进行中（期间吞按键）
 
 // 子页面公用：黑底空屏
 lv_obj_t *page_screen_create(void);
