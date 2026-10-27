@@ -50,6 +50,18 @@ cc -std=c11 -Wall -Wextra -Werror -Imain \
 
 完整验证要求预先激活 ESP-IDF 5.5.3。CI 与本地使用同一脚本；若 CI 和本地行为不同，应先修复脚本或环境，而不是维护两份命令。
 
+## 构建前源码检查（建议性）
+
+两个独立小工具用于在固件构建前抓常见错误，属建议性，改动 UI 文案或图片/字体素材时运行：
+
+```bash
+python3 tools/check_glyphs.py     # 所选字体未收录的中文字符
+python3 tools/check_material.py   # 编译进固件却无人引用的图片/字体素材（死 Flash）
+python3 tools/check_material.py --list   # 完整的素材-引用对照表
+```
+
+`check_glyphs.py` 按字体区分：每个文件对照它用到的最小那套 `font_fusion*` 校验，所以 24 px 标题文案按该字体较小的子集检查（见 [LVGL 中文显示](lvgl-chinese-fonts.zh_CN.md)）。`check_material.py` 报出 `main/CMakeLists.txt` 列入编译、但符号未被其他文件引用的 `art_*` / `ic_*` / `cha_*` / `font_*` / `logo*` 素材——从构建里移除以省 Flash，或补上使用它的代码；它也会提示磁盘上存在但从未加入构建的素材。两者均为静态启发式，删除前请人工确认。
+
 涉及物理外设的改动必须在真机运行硬件指南验收清单，并把“编译通过”与“硬件验证通过”分开记录。
 
 社区只能上传验证通过的 `build/FoloToy-AI-Passport-full.bin`，不得上传应用单镜像

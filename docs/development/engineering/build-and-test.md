@@ -53,6 +53,18 @@ Use the unified validation entry point:
 
 CI calls the same script. Fix the shared script or environment if local and CI behavior differs; do not duplicate command sequences in workflows.
 
+## Pre-build source checks (advisory)
+
+Two standalone helpers catch common mistakes before a firmware build. They are advisory, run them when touching UI text or image/font assets:
+
+```bash
+python3 tools/check_glyphs.py     # Chinese characters outside the selected font's coverage
+python3 tools/check_material.py   # image/font assets compiled in but never referenced (dead Flash)
+python3 tools/check_material.py --list   # full asset-to-reference map
+```
+
+`check_glyphs.py` is font-aware: it validates each file against the smallest `font_fusion*` it uses, so 24 px headline text is checked against that font's smaller subset (see [LVGL Chinese text](lvgl-chinese-fonts.md)). `check_material.py` reports any `art_*` / `ic_*` / `cha_*` / `font_*` / `logo*` asset listed in `main/CMakeLists.txt` whose symbol no other file references — remove it from the build to save Flash, or wire it up. It also notes assets on disk that were never added to the build. Both are static heuristics; confirm before deleting.
+
 Hardware-affecting changes must also run the applicable on-device checklist in the hardware guide. Report compilation separately from physical-device validation.
 
 Never upload the app-only `build/FoloToy-AI-Passport.bin` to the community. Only

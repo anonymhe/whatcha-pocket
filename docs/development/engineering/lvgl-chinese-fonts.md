@@ -12,10 +12,14 @@ Unlike the upstream baseline, this firmware does **not** rely on Montserrat or o
 
 | Font | Declared in | Covers | Use for |
 | --- | --- | --- | --- |
-| `font_fusion12` | [`main/apps/app_ui.h`](../../../main/apps/app_ui.h) | ~6,800 common Chinese characters plus ASCII, 12 px pixel style | All Chinese UI text |
+| `font_fusion12` | `main/*.c` via `LV_FONT_DECLARE` (e.g. [`main/pages.c`](../../../main/pages.c)) | ~6,800 common Chinese characters plus ASCII, 12 px pixel style | All Chinese UI text |
+| `font_fusion24` | [`main/page_type.c`](../../../main/page_type.c), [`main/page_fortune.c`](../../../main/page_fortune.c) | A ~650-character subset of `font_fusion12`, 24 px pixel style | Result/headline text only, and only characters inside the subset |
+| `font_fusion16` | On disk but not compiled (removed from the build as dead Flash) | The same ~650-character subset, 16 px | None; `font_fusion16.c` is kept for reference. Re-add it to `main/CMakeLists.txt` only if a page starts using it |
 | `font_ps8` / `font_ps16` | `main/apps/app_ui.h` | ASCII only (digits, Latin), 8/16 px pixel style | Scores, timers, numeric readouts |
 
-The covered character set for `font_fusion12` is listed in [`docs/watcha/fusion12_chars.txt`](../../watcha/fusion12_chars.txt). `CONFIG_LV_FONT_UNSCII_8` and `CONFIG_LV_FONT_UNSCII_16` are enabled in [`sdkconfig.defaults`](../../../sdkconfig.defaults) as ASCII pixel fallbacks; the Montserrat defaults carry no CJK glyphs and are not the display font here.
+All three `font_fusion*` fonts are generated from the same `fusion12.ttf`; `font_fusion16` and `font_fusion24` deliberately carry only a small symbol subset to save Flash. The exact subset of each is recorded in the `Opts:` header comment of its `main/font_fusion*.c` file, and `check_glyphs.py` reads those headers directly. The covered character set for `font_fusion12` is also listed, as a readable inventory, in [`docs/watcha/fusion12_chars.txt`](../../watcha/fusion12_chars.txt). `CONFIG_LV_FONT_UNSCII_8` and `CONFIG_LV_FONT_UNSCII_16` are enabled in [`sdkconfig.defaults`](../../../sdkconfig.defaults) as ASCII pixel fallbacks; the Montserrat defaults carry no CJK glyphs and are not the display font here.
+
+Because `font_fusion24` covers only a subset, a character can exist in `font_fusion12` yet still box out when drawn at 24 px. Any text rendered with `font_fusion24` (today, the result name/quote table in `page_type.c` and the headline in `page_fortune.c`) must stay inside that subset. The glyph gate below enforces this per file.
 
 A character outside `font_fusion12` renders as a missing-glyph box on the device. Changing a source file's encoding does not add a glyph the font never contained; neither does enlarging the LVGL memory pool.
 
@@ -41,14 +45,14 @@ For ordinary app work you do not add or generate a font. You:
 2. Run the coverage gate and fix any boxed characters by substituting a covered character:
 
    ```bash
-   python3 tools/check_glyphs.py            # scans main/apps/
+   python3 tools/check_glyphs.py            # scans main/ and main/apps/
    python3 tools/check_glyphs.py main/xxx.c # scans one file
    ```
 
-   It reports each string literal character that `font_fusion12` does not cover, with the file and line. Known gaps to substitute by hand: `…` (use `...`) and `◀`.
+   It reports each string literal character the font does not cover, with the file and line. The checker is font-aware: it validates each file against the *smallest* `font_fusion*` the file references, so a literal in a `font_fusion24` file (such as the result table in `page_type.c`) is checked against the 24 px subset, not the full 12 px set. Known gaps to substitute by hand: `…` (use `...`) and `◀`.
 3. Keep dynamic content (names, network text) inside the covered set, or show a deliberate replacement for anything outside it. A fixed menu subset does not guarantee arbitrary user or server text; do not silently drop unknown characters.
 
-`check_glyphs.py` inspects C string literals; it does not prove on-device rendering of fonts other than `font_fusion12`, nor does it check layout. Treat a clean run as a necessary, not a sufficient, condition.
+`check_glyphs.py` inspects C string literals; it validates each file against the smallest font it uses, but it cannot follow text passed through variables (for example, table data read at runtime), nor does it prove on-device rendering or check layout. Treat a clean run as a necessary, not a sufficient, condition.
 
 ## 4. Selecting a font on a widget
 
@@ -56,7 +60,8 @@ Call these only after LVGL/display initialization, in the LVGL task or while hol
 
 ```c
 #include "lvgl.h"
-#include "app_ui.h"   /* LV_FONT_DECLARE(font_fusion12) etc. live here */
+
+LV_FONT_DECLARE(font_fusion12);   /* each .c that uses the font declares it */
 
 lv_obj_t *label = lv_label_create(parent);
 lv_obj_set_style_text_font(label, &font_fusion12, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -107,7 +112,11 @@ lv_font_conv \
   --output main/font_fusion12.c
 ```
 
-An absent glyph in the source font cannot be created by requesting its code point. Regenerate `docs/watcha/fusion12_chars.txt` to match the new coverage so `check_glyphs.py` stays accurate, keep the character inventory and command under version control, and avoid enabling extra sizes or a full CJK family to fix one missing character. Match the output to the LVGL version pinned in `dependencies.lock`; start uncompressed to avoid a decoder mismatch. See the [LVGL 9.5 font overview](https://docs.lvgl.io/9.5/main-modules/fonts/overview.html).
+An absent glyph in the source font cannot be created by requesting its code point. Regenerate `docs/watcha/fusion12_chars.txt` to match the new coverage so `check_glyphs.py` stays accurate, keep the character inventory and command under version control, and avoid enabling extra sizes or a full CJK family to fix one missing character. If you change which characters `font_fusion12` covers, regenerate `font_fusion16` / `font_fusion24` from the same TTF at their sizes too, so the subsets stay consistent. Match the output to the LVGL version pinned in `dependencies.lock`; start uncompressed to avoid a decoder mismatch. See the [LVGL 9.5 font overview](https://docs.lvgl.io/9.5/main-modules/fonts/overview.html).
+
+### Source font and license
+
+The `fusion12.ttf` these fonts are generated from is [Fusion Pixel Font](https://github.com/TakWolf/fusion-pixel-font) by TakWolf, a pan-CJK pixel font released under [SIL Open Font License 1.1](https://openfontlicense.org/) (`OFL-1.1`). The project ships native pixel designs at 8/10/12 px; 12 px is a native size, so `font_fusion12` renders crisply, while `font_fusion16` / `font_fusion24` are scaled from that artwork (24 px benefits from being a clean 2× of 12 px; 16 px is not an integer multiple and is softer). OFL-1.1 permits embedding the generated bitmaps in this firmware; keep the license notice and do not sell the font files on their own. If you regenerate from a newer upstream release, record the release version (date-based, e.g. `2026.10.25`) alongside the `lv_font_conv` command.
 
 ## 8. Validate without overstating the result
 
