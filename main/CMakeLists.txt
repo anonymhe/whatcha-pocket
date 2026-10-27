@@ -58,7 +58,6 @@ idf_component_register(
          "storage.c"
          "ble_sync.c"
          "sfx.c"
-         "dbg.c"
          "page_fortune.c"
          "page_pomo.c"
          "page_type.c"

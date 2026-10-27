@@ -15,7 +15,6 @@ static const char *TAG = "main";
 #include "pages.h"
 #include "storage.h"
 #include "sfx.h"
-#include "dbg.h"
 #include "ble_sync.h"
 #include "boot_anim.h"
 static bool s_ready = false;
@@ -103,7 +102,6 @@ void app_main(void)
     bsp_button_init(on_key, NULL);
     bsp_battery_init();
     storage_init();
-    dbg_init();
     ble_sync_start();
     store_set_u32("boot_cnt", store_get_u32("boot_cnt", 0) + 1);   // 无时间同步时按开机次数算"天"
     sfx_init();
