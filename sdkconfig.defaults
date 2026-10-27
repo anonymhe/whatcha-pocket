@@ -32,8 +32,13 @@ CONFIG_LV_COLOR_DEPTH_16=y
 CONFIG_LV_FONT_MONTSERRAT_14=y
 CONFIG_LV_FONT_MONTSERRAT_20=y
 # LVGL 内置 malloc 池大小(KB)。它是独立静态区、不与系统堆共享,配大了会白白占用 RAM。
-# 本 demo UI 简单,24KB 足够;若自建复杂界面出现绘制卡死/看门狗,调大此值。
-CONFIG_LV_MEM_SIZE_KILOBYTES=24
+# 首页 RPG 身份卡 + 卡片列表会一次建 100+ 个 LVGL 对象，池耗尽时 lv_image_create
+# 返回 NULL、lv_image_set_src(NULL) 触发 LVGL 死循环看门狗复位。切页是「先建新屏
+# 再删旧屏」，过渡瞬间两屏对象并存，峰值更高；新启动器含两只点阵图标(各 20+ 方块)，
+# 故从 48KB 提升到 64KB。若自建更复杂界面再按需调大。
+CONFIG_LV_MEM_SIZE_KILOBYTES=64
+# 同步页用 LVGL 内置二维码控件渲染小程序 deeplink。
+CONFIG_LV_USE_QRCODE=y
 
 # --- 系统 ---
 CONFIG_FREERTOS_HZ=1000

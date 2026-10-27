@@ -4,7 +4,7 @@
 
 # Coding Conventions
 
-- Write C with four-space indentation and K&R braces, following neighboring files. Use `snake_case`, `BSP_*` public constants, `s_` file-local state, `bsp_` public BSP APIs, and `demo_<feature>_<action>` demo entry points. Prefer `static` for internal symbols.
+- Write C with four-space indentation and K&R braces, following neighboring files. Use `snake_case`, `BSP_*` public constants, `s_` file-local state, `bsp_` public BSP APIs, and `page_<feature>` page modules that export a `page_t`. Prefer `static` for internal symbols.
 - Keep UI text and default documentation in English. Explanatory source comments may use Chinese while retaining established English technical terms.
 - This firmware ships a pixel CJK font, `font_fusion12` (~6,800 common Chinese characters plus ASCII), and ASCII-only `font_ps8` / `font_ps16`; Chinese UI text uses `font_fusion12`. A character outside its coverage renders as a missing-glyph box, and changing source-file encoding does not add it. Stay inside the covered set, run `python3 tools/check_glyphs.py`, and substitute any flagged character. See [LVGL Chinese text](lvgl-chinese-fonts.md) for fonts, coverage, and troubleshooting.
 - Put reusable hardware behavior in `components/bsp`; keep menus, animations, product interaction, and validation pages in `main`.

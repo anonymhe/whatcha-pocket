@@ -6,15 +6,25 @@
 
 ## Unreleased
 
-- Made the Chinese-glyph coverage check font-aware so it catches a bug it previously missed: the larger 24 px headline font covers only a small subset of characters, and text that looked fine in the editor could still render as empty boxes on the device. The check now validates each file against the exact font it uses and scans every UI source file, not just one folder; documented all shipped pixel fonts, their coverage limits, and the open-source font they are built from.
+- Replaced the fixed six-icon home grid with a scrollable card launcher: an on-device usage guide page, the existing features, and a slot for community mini-games now share one up/down list, with the selected card centered and its neighbors peeking in.
 
-- Added a check that flags image and font assets compiled into the firmware but never used, so unused data stops wasting limited Flash. Using it, dropped a 16 px headline font that nothing referenced from the build.
+- Added a green wipe transition between screens. The wipe also releases the outgoing screen before building the incoming one, so the device never holds two full screens' worth of drawing memory at once; button presses are ignored while a transition plays.
+
+- Made the Chinese-glyph coverage check font-aware so it catches a bug it previously missed: a headline font can cover only a small subset of characters, and text that looked fine in the editor could still render as empty boxes on the device. The check now validates each file against the exact font it uses and scans every UI source file, not just one folder; documented all shipped pixel fonts, their coverage limits, and the open-source font they are built from.
+
+- Added a check that flags image and font assets compiled into the firmware but never used, so unused data stops wasting limited Flash.
 
 - Hardened the audio power-down used by the inactivity timeout: the codec now runs the full ES8311 suspend register sequence with readback verification and a retry, replacing the previous plain codec close, so the codec reliably reaches its low-power state and resumes cleanly on the next key press. Also added verified CW2017 battery-gauge sleep and deep-sleep audio pin isolation for future shutdown paths.
 
 - Added an LVGL Chinese-text guide describing the shipped `font_fusion12` CJK font and ASCII `font_ps8`/`font_ps16`, how to stay inside their coverage with `check_glyphs.py`, and a missing-glyph troubleshooting order; corrected the coding conventions, which still described the upstream Montserrat-only baseline.
 
 - Shortened the idle backlight dim from sixty to thirty seconds without key input, so the screen spends less time at full brightness while idle; pressing any key restores full brightness. Pomodoro keep-awake sessions are unaffected.
+
+- Rebuilt the embedded pixel fonts from the Fusion Pixel typeface: Chinese text now uses a full GB2312 glyph set (plus the handful of symbols and nickname variants the UI relies on) at the standard 12 px size, and the large headline font was regenerated at 20 px as an exact 2x of the 10 px grid, replacing the previous 24 px headline font. A compact 10 px body font is also available as source but left out of the build to save Flash until something needs it. A reproducible generator (`tools/gen_fonts.py`) rebuilds every font and its glyph-coverage table from the checked-in source typefaces.
+
+- Reworked the home-screen identity area into an RPG character-card layout: the nickname and tier badge are left-aligned (24 px name; tier labels remapped to "用户 - Spectator", "观猹员 - Player", and "观猹员 - Player No.1"). Battery now reads as an HP bar with a green/amber/red fill and percentage, replacing the top-bar battery readout. Player stats show raw counts beside pixel icons: ATK (reviews), DEF (posts), and Coins (upvotes), each rendered with a runtime dot-matrix icon helper so no image-conversion toolchain is needed.
+
+- Removed the unused hardware-validation demo pages and their assets from `main/` (Wi-Fi scan, BLE advertising, low-power sleep, display, button, audio, battery pages, the shared radio setup, and the crash-log helper) along with unreferenced fonts, icons, and images. The firmware keeps the page router in `pages.c` with feature pages (`page_*.c`) and community apps (`main/apps/`); the home page module was renamed from `demo_watcha.c` to `page_home.c` with no behavior change. Documentation (capability tables, hardware guide, AI guides) was updated to match.
 
 - Added a 10-minute inactivity timeout: after no key input for ten minutes the device stops BLE advertising and powers down the audio codec to save power; pressing any key restores both the advertising and the audio codec. Pomodoro keep-awake sessions are unaffected.
 

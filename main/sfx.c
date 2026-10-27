@@ -68,7 +68,7 @@ static const note_t S_REVEAL[]  = { { 120, 120, 22, W_NOISE }, REST(28), { 120, 
 static const note_t S_KEY[]     = { { 260, 200, 25, W_KEY }, END };
 
 static const note_t *const SEQ[SFX__N] = {
-    [SFX_GU] = S_GU, [SFX_GU_COMBO] = S_GU, [SFX_NAV] = S_NAV, [SFX_OK] = S_OK, [SFX_BACK] = S_BACK,
+    [SFX_GU] = S_GU, [SFX_NAV] = S_NAV, [SFX_OK] = S_OK, [SFX_BACK] = S_BACK,
     [SFX_BOOT] = S_BOOT, [SFX_BLIP] = S_BLIP, [SFX_PLINK] = S_PLINK, [SFX_ARP_UP] = S_ARP_UP,
     [SFX_FANFARE] = S_FANFARE, [SFX_POP] = S_POP, [SFX_RECORD] = S_RECORD, [SFX_BAD] = S_BAD,
     [SFX_POWERUP] = S_POWERUP, [SFX_CLEAR] = S_CLEAR, [SFX_REVEAL] = S_REVEAL, [SFX_KEY] = S_KEY,

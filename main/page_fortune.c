@@ -8,7 +8,7 @@
 
 LV_FONT_DECLARE(font_fusion12);
 LV_FONT_DECLARE(font_ps8);
-LV_FONT_DECLARE(font_fusion24);
+LV_FONT_DECLARE(font_fusion20);
 LV_IMAGE_DECLARE(art_fortune_none);
 LV_IMAGE_DECLARE(art_fortune_zhong);
 LV_IMAGE_DECLARE(art_fortune_shang);
@@ -229,7 +229,7 @@ static void page_enter(void)
     s_dia_r = block(s_scr, 0, 0, 4, 4, C_MUTED);
 
     s_rank = R_ZHONG;
-    s_rank_lbl = label(s_scr, "今日猹运", &font_fusion24, C_MUTED);
+    s_rank_lbl = label(s_scr, "今日猹运", &font_fusion20, C_MUTED);
 
     s_yi = label(s_scr, "", &font_fusion12, C_TEXT);
     s_ji = label(s_scr, "", &font_fusion12, C_TEXT);

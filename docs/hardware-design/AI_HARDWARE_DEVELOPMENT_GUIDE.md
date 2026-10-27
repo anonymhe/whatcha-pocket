@@ -11,14 +11,14 @@ This is the board-level context for AI coding assistants and new developers. It 
 Document scope:
 
 - Applicable target: the ESP32-C3 FoloToy AI Passport mapping implemented by this repository.
-- Product specifications are in [specifications.md](specifications.md); firmware behavior follows `bsp_pins.h`, BSP implementations, `sdkconfig.defaults`, `partitions.csv`, and the demo code.
+- Product specifications are in [specifications.md](specifications.md); firmware behavior follows `bsp_pins.h`, BSP implementations, `sdkconfig.defaults`, `partitions.csv`, and the application code in `main/`.
 - Code audit date: 2026-08-26.
 
 ## 1. Before changing hardware-facing code
 
 1. Read `AGENTS.md`, this guide, and the affected BSP header/implementation.
 2. Run `git status --short --branch` and preserve unrelated changes.
-3. Put reusable hardware behavior in `components/bsp`; keep menu, animation, product interaction, and validation pages in `main`.
+3. Put reusable hardware behavior in `components/bsp`; keep pages, animation, and product interaction in `main`.
 4. Keep pins, I2C addresses, and panel dimensions in `bsp_pins.h` only.
 5. Keep hardware-facing changes within the product specification and explicit BSP definitions.
 
@@ -32,11 +32,9 @@ The target is the ESP32-C3 FoloToy AI Passport with ESP-IDF 5.5.3. It has 8 MB F
 | Display | ST7789P3, 240 × 320, RGB565 | SPI2, 40 MHz, mode 0 | Driver and validation page |
 | Backlight | LCD LED | GPIO21, LEDC 5 kHz/10 bit | PWM brightness control |
 | Buttons | UP/DOWN/OK resistor ladder | GPIO0 / ADC1_CH0 | Events and live-voltage page |
-| Audio | ES8311 playback and microphone | shared I2C + I2S0 full duplex | Playback and recording page |
+| Audio | ES8311 playback and microphone | shared I2C + I2S0 full duplex | sfx playback; recording via `bsp_audio_*` |
 | Battery | CW2017 fuel gauge | shared I2C0, address `0x63` | Optional SOC and voltage driver |
-| Wi-Fi | 2.4 GHz station | initialized by the demo | Scan page |
-| Bluetooth LE | NimBLE peripheral | initialized by the demo | Non-connectable advertising page |
-| Low power | light/deep sleep | RTC timer wake | 2 s light and 5 s deep-sleep modes |
+| Bluetooth LE | NimBLE peripheral | owned by `ble_sync.c` | Profile-sync advertising (GATT server) |
 | Console | USB Serial/JTAG | native USB GPIO18/19 | Configured |
 
 ## 3. Pin map and resource ownership
@@ -73,8 +71,7 @@ LCD reset and amplifier enable are `-1`: display reset uses software reset, and 
 | I2S0 | audio BSP | TX and RX are full duplex and share MCLK/BCLK/WS. |
 | USB Serial/JTAG | console configuration | GPIO18/19 are part of the selected console path. |
 | Internal RAM/DMA | display, LVGL, audio, radio, tasks | No PSRAM exists; total free heap and largest contiguous block both matter. |
-| NVS/network event loop | `demo_radio.c` | Prepared once for Wi-Fi/BLE demos; do not erase unrelated NVS data on initialization errors. |
-| Wi-Fi/BLE stacks | individual demo pages | Current demos start on page entry and deinitialize on exit; the stacks do not remain active together. |
+| NimBLE host/controller | `ble_sync.c` | The profile-sync stack runs for the whole session; it is paused (advertising stopped) after ten idle minutes and resumed on key press. |
 
 GPIO0 is both the button ADC node and an ESP32-C3 boot-related pin. GPIO21 is the backlight output and conflicts with the commonly used UART0 TX mapping. Pin reassignment requires boot/programming-path review and on-device acceptance.
 
@@ -92,14 +89,17 @@ app_main
   ├─ shared I2C init and scan
   ├─ display and LVGL init, then backlight
   ├─ button init
-  ├─ audio init
   ├─ battery init
-  └─ LVGL menu and independent demo pages
+  ├─ NVS storage, crash-log and BLE sync start
+  └─ boot animation, then the page router in pages.c
+       ├─ home (profile card + six feature cards)
+       ├─ intro → one feature page per card
+       └─ lab → community apps from main/apps/
 ```
 
-Display/LVGL is a hard dependency. Buttons, audio, and battery are soft dependencies whose pages show `[FAIL]` while other pages remain available. Public BSP APIs are under `components/bsp/include/`; most initialization is idempotent, but there is no universal BSP deinitialization API.
+Display/LVGL is a hard dependency. Battery and audio are soft dependencies: pages degrade (battery shows `--%`, sounds are skipped) instead of failing the application. Public BSP APIs are under `components/bsp/include/`; most initialization is idempotent, but there is no universal BSP deinitialization API.
 
-Wi-Fi, NimBLE, and sleep use ESP-IDF directly rather than the BSP. `demo_radio.c` owns shared NVS, `esp_netif`, and default-event-loop setup. Wi-Fi and Bluetooth pages allocate their radio stacks on entry and stop/deinitialize them on exit. Do not erase NVS to hide partition errors. Deep sleep restarts the application and the demo uses RTC slow memory for the wake counter.
+Bluetooth LE uses NimBLE directly rather than the BSP. `ble_sync.c` owns the stack for the whole session and never deinitializes it; power saving only pauses advertising and powers down the audio codec after ten idle minutes.
 
 ## 5. Display and LVGL
 
@@ -141,7 +141,7 @@ Troubleshoot in order: bus-init log, scan results for `0x18`/`0x63`, power/groun
 
 ## 8. ES8311 audio
 
-The MCU is I2S master and the ES8311 is slave. I2S0 TX/RX shares MCLK GPIO6, BCLK GPIO5, and WS GPIO3; DOUT is GPIO2 and DIN is GPIO4. The demo opens 16 kHz, 16-bit, mono PCM over a physically two-slot standard-I2S bus.
+The MCU is I2S master and the ES8311 is slave. I2S0 TX/RX shares MCLK GPIO6, BCLK GPIO5, and WS GPIO3; DOUT is GPIO2 and DIN is GPIO4. The firmware opens 16 kHz, 16-bit, mono PCM over a physically two-slot standard-I2S bus.
 
 - Call `bsp_audio_set_format()` before PCM I/O.
 - A format change must close and reopen `esp_codec_dev`; an already open device is not reconfigured.
@@ -152,7 +152,7 @@ The MCU is I2S master and the ES8311 is slave. I2S0 TX/RX shares MCLK GPIO6, BCL
 - `bsp_audio_read/write` block and must not run in button callbacks or the LVGL task.
 - I2S DMA uses six descriptors of 240 frames each.
 
-The audio demo's three-second recording buffer is about 96 KB and is the largest transient heap allocation. Prefer chunked streaming for longer audio. Production task shutdown needs a cancellable loop and explicit exit handshake rather than deleting a task blocked in codec I/O.
+The sfx task's streaming buffers are the main transient audio heap users. Prefer chunked streaming for longer audio. Production task shutdown needs a cancellable loop and explicit exit handshake rather than deleting a task blocked in codec I/O.
 
 ## 9. CW2017 fuel gauge
 
@@ -175,15 +175,13 @@ payload. See the [BLE compatibility contract](../development/engineering/ble-rec
 
 The console is USB Serial/JTAG. Do not switch to the UART0 default output without resolving its GPIO21 conflict with the backlight.
 
-Review at least the 24 KB LVGL pool, 9.6 KB LCD DMA buffer, I2S DMA, 96 KB demo recording, radio stacks, task stacks, total free heap, and largest contiguous block when adding assets, TLS/networking, audio buffers, or double buffering.
+Review at least the 24 KB LVGL pool, 9.6 KB LCD DMA buffer, I2S DMA, the NimBLE host/controller, task stacks, total free heap, and largest contiguous block when adding assets, TLS/networking, audio buffers, or double buffering.
 
 ## 11. Adding features
 
 For reusable hardware capability, add `bsp_<feature>.h` and its implementation, keep constants in `bsp_pins.h`, update component CMake/dependencies, return `esp_err_t`, log actionable pin/address context, and document threading, blocking, ownership, initialization, and failure behavior.
 
-For a validation page, implement `enter`, `exit`, and `key` in `main/demo_<feature>.c`; declare it in `demo.h`, list it in CMake, and register it in `DEMOS[]`. Create/load a page-owned screen on entry. Stop workers/timers before deleting it on exit. Keep UI text in English, put slow work in worker tasks, lock LVGL updates, and preserve global OK-long-press return behavior.
-
-Menu initialization status arrays implicitly follow `DEMOS[]` order; update and review them together.
+For a new page, implement `enter`, `exit`, and `key` in a `page_<feature>.c` under `main/`, declare the `page_t` instance in `main/pages.h`-style headers or register it in `pages.c`'s `PAGES[]` table (community apps register in `main/apps/apps.c` instead and live in `main/apps/`). Create/load a page-owned screen on entry. Stop workers/timers before deleting it on exit. Keep slow work in worker tasks, lock LVGL updates, and preserve global OK-long-press return behavior.
 
 ## 12. Development environment
 
@@ -231,11 +229,9 @@ General board acceptance:
 | Pin/I2C | scan, all shared devices, boot straps, USB logs |
 | LCD | color blocks, orientation, clipping, inversion, byte order, backlight levels |
 | ADC/buttons | released and pressed mV, click/double/long events, margin across battery levels |
-| Codec/I2S | 1 kHz tone, non-zero recording, correct playback speed, format changes, page exit |
+| Codec/I2S | sound effects play at correct pitch/speed, format changes stay stable, concurrent audio and display rendering |
 | Battery | plausible SOC/mV, graceful missing-device behavior, intermittent-I2C recovery |
-| Wi-Fi | visible scan count/SSID/RSSI, rescan, repeated entry/exit |
-| Bluetooth LE | phone sees `FoloPassport`, restart advertising, advertising stops on exit, repeated entry/exit |
-| Light/deep sleep | select with UP/DOWN; 2 s light sleep resumes with backlight; 5 s deep sleep restarts with timer cause and retained count |
+| Bluetooth LE | phone sees the sync advertising, profile sync updates the home identity area, advertising pauses after ten idle minutes and resumes on key press |
 | DMA/memory/UI | build memory report, runtime minimum heap/largest block, stable concurrent audio/display |
 
 ## 14. Troubleshooting
@@ -254,9 +250,7 @@ General board acceptance:
 | Recording is zero | `no_dac_ref`, DIN GPIO4, microphone path, gain |
 | Recording allocation fails | no PSRAM; shorten/stream and inspect largest block |
 | Battery shows `--` | `0x63` response, invalid SOC, profile/startup delay |
-| Wi-Fi/BLE fails on second entry | stack stop/deinit and one-time NVS/event-loop setup |
-| Black after light sleep | timer wake source, sleep error, backlight restore |
-| Deep sleep does not restart | timer source, boot wake cause, RTC counter |
+| No audio | sfx task ready (`sfx_status`), codec powered down after ten idle minutes, key press resumes it |
 | I2S allocation fails after UI growth | competition among LCD/LVGL buffers and I2S DMA |
 | Chinese text appears as boxes | Montserrat 14/20 has no CJK glyphs; compile and select a CJK subset, configure fallback for mixed text, and verify glyph coverage on the device |
 

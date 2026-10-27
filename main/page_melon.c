@@ -9,7 +9,6 @@
 
 LV_FONT_DECLARE(font_fusion12);
 LV_FONT_DECLARE(font_ps8);
-LV_IMAGE_DECLARE(img_cha);
 LV_IMAGE_DECLARE(art_melon_go);
 LV_IMAGE_DECLARE(art_melon_result);
 LV_IMAGE_DECLARE(art_melon_record);
