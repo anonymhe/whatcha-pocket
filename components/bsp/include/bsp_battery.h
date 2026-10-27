@@ -14,3 +14,8 @@ int bsp_battery_soc(void);
 
 // 电池电压 mV;读失败返回 -1。
 int bsp_battery_mv(void);
+
+// 省电:令 CW2017 进入休眠(写 CONFIG=SLEEP 并回读校验,失败重试一次)。
+// 适合长时间低功耗期间停掉电量计;未初始化时为空操作返回 ESP_OK。
+// 唤醒需重新 bsp_battery_init()(其内部会按匹配结果切回 ACTIVE)。
+esp_err_t bsp_battery_sleep(void);
