@@ -63,7 +63,6 @@ idf_component_register(
          "page_type.c"
          "page_intro.c"
          "page_melon.c"
-         "page_calendar.c"
          "page_muyu.c"
          "page_1024.c"
          "font_fusion12.c"
