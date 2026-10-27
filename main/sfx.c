@@ -172,6 +172,7 @@ static void sfx_task(void *arg)
         if (s_resume_req) {
             s_resume_req = false;
             if (s_slept) {
+                bsp_audio_wake();   // 重建 codec 并恢复休眠前音量/格式；幂等
                 if (bsp_audio_set_format(SR, 16, 1) == ESP_OK) {
                     bsp_audio_set_volume(100);
                     s_slept = false;
@@ -183,7 +184,7 @@ static void sfx_task(void *arg)
         }
         if (s_sleep_req) {
             s_sleep_req = false;
-            if (!s_slept) { bsp_audio_stop(); s_slept = true; ESP_LOGI(TAG, "sleep"); }
+            if (!s_slept) { bsp_audio_sleep(); s_slept = true; ESP_LOGI(TAG, "sleep"); }
         }
         int id = s_req, arg2 = s_req_arg;
         s_req = -1;
