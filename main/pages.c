@@ -6,9 +6,7 @@
 
 static const char *TAG = "pages";
 
-LV_FONT_DECLARE(font_fusion12);
-
-extern const page_t page_home_def;   // demo_watcha.c
+extern const page_t page_home_def;   // page_home.c
 extern const page_t page_fortune;    // 好运猹
 extern const page_t page_pomo;       // 番茄猹
 extern const page_t page_melon;      // 吃瓜猹
@@ -76,19 +74,4 @@ lv_obj_t *page_screen_create(void)
     lv_obj_set_style_pad_all(scr, 0, 0);
     lv_obj_set_style_border_width(scr, 0, 0);
     return scr;
-}
-
-void page_stub_fill(lv_obj_t *scr, const char *title, const lv_font_t *font)
-{
-    lv_obj_t *t = lv_label_create(scr);
-    lv_label_set_text(t, title);
-    lv_obj_set_style_text_font(t, font, 0);
-    lv_obj_set_style_text_color(t, lv_color_hex(C_GREEN), 0);
-    lv_obj_align(t, LV_ALIGN_CENTER, 0, -12);
-
-    lv_obj_t *h = lv_label_create(scr);
-    lv_label_set_text(h, "开发中 · 长按返回");
-    lv_obj_set_style_text_font(h, &font_fusion12, 0);
-    lv_obj_set_style_text_color(h, lv_color_hex(C_MUTED), 0);
-    lv_obj_align(h, LV_ALIGN_CENTER, 0, 14);
 }

@@ -6,7 +6,7 @@ idf_component_register(
          "page_lab.c"
          ${WATCHA_APP_SRCS}
          "boot_anim.c"
-         "demo_watcha.c"
+         "page_home.c"
          "cha_pool.c"
          "cha_box.c"
          "cha_ctrl_c.c"

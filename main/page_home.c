@@ -1,5 +1,4 @@
-// main/demo_watcha.c —— 观猹首页（按 mock v14 布局）；身份区读蓝牙同步的资料
-#include "demo.h"
+// main/page_home.c —— 观猹首页（按 mock v14 布局）；身份区读蓝牙同步的资料
 #include "pages.h"
 #include "sfx.h"
 #include "storage.h"
@@ -206,7 +205,7 @@ static void sync_tick(lv_timer_t *t)
     if (ble_sync_take_updated()) apply_profile();
 }
 
-void demo_watcha_enter(void)
+static void home_enter(void)
 {
     s_scr = lv_obj_create(NULL);
     lv_obj_remove_flag(s_scr, LV_OBJ_FLAG_SCROLLABLE);
@@ -291,14 +290,14 @@ void demo_watcha_enter(void)
     lv_screen_load(s_scr);
 }
 
-void demo_watcha_exit(void)
+static void home_exit(void)
 {
     if (s_timer)      { lv_timer_delete(s_timer);      s_timer = NULL; }
     if (s_sync_timer) { lv_timer_delete(s_sync_timer); s_sync_timer = NULL; }
     if (s_scr)        { lv_obj_delete(s_scr);          s_scr = NULL;   }
 }
 
-void demo_watcha_key(bsp_btn_t btn, bsp_btn_ev_t ev)
+static void home_key(bsp_btn_t btn, bsp_btn_ev_t ev)
 {
     if (btn == BSP_BTN_UP && ev == BSP_BTN_LONG) {          // 首页长按 ▲：进口袋上新
         sfx_play(SFX_OK);
@@ -317,4 +316,4 @@ void demo_watcha_key(bsp_btn_t btn, bsp_btn_ev_t ev)
     refresh_sel();
 }
 
-const page_t page_home_def = { "home", demo_watcha_enter, demo_watcha_exit, demo_watcha_key };
+const page_t page_home_def = { "home", home_enter, home_exit, home_key };
