@@ -11,7 +11,7 @@ The upstream repository keeps `main` as the current FoloToy baseline. Fork-speci
 ```text
 docs/                  product, contribution, development, and design documents
 components/bsp/        stable board APIs and hardware implementation
-main/                  LVGL menu and independent demo pages
+main/                  device firmware: pages.c router plus feature pages
 assets/                reusable fonts, images, music, and sound effects
 skills/                reusable AI-agent skills
 tests/                 host-runnable logic tests

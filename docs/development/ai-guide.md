@@ -37,7 +37,7 @@ requirement
               └─ bsp_pins.h       pin and hardware-parameter source of truth
 ```
 
-A new page implements the `enter`, `exit`, and `key` interface in `main/demo_<feature>.c`, is declared in `main/demo.h`, added to `main/CMakeLists.txt`, and registered in `main.c`. Extend menu initialization and failure degradation for new optional peripherals.
+A new page implements the `enter`, `exit`, and `key` interface in `main/page_<feature>.c`, is added to `main/CMakeLists.txt`, and registers its `page_t` in `pages.c`'s `PAGES[]` (community apps instead live in `main/apps/` and register in `apps.c`'s `APPS[]`). Extend failure degradation for new optional peripherals.
 
 Only reusable hardware capabilities belong in the BSP. Document blocking behavior, task context, ownership, failures, and initialization order. Pins and I2C addresses belong only in `bsp_pins.h`.
 
