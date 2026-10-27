@@ -83,11 +83,15 @@ def main():
     bad = 0
     for p in paths:
         src = open(p, encoding='utf-8').read()
-        font_name, have = pick_font(src, fonts)
+        default_name, default_have = pick_font(src, fonts)
         src = re.sub(r'/\*.*?\*/', lambda m: '\n' * m.group(0).count('\n'), src, flags=re.S)   # 去掉块注释，保留行号
         for lineno, line in enumerate(src.split('\n'), 1):
             if line.lstrip().startswith('//'):
                 continue
+            # 若本行点名了某套 font_fusion*，就按那套校验（大号标题字是小号的子集，
+            # 不按行区分会用最宽松的字库放行，漏掉只在标题字缺失的字）；否则退回文件默认。
+            on_line = [n for n in fonts if re.search(r'\b%s\b' % re.escape(n), line)]
+            font_name, have = (on_line[0], fonts[on_line[0]]) if on_line else (default_name, default_have)
             for s in re.findall(r'"((?:[^"\\]|\\.)*)"', line):
                 miss = sorted({ch for ch in s if ord(ch) > 0x7f and ch not in have})
                 if miss:
