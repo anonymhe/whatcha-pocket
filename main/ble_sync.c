@@ -35,18 +35,15 @@ static const ble_uuid128_t UUID_RES = WATCHA_UUID(0x04);
 #define MAX_JSON    512
 
 static char        s_id[7];
+static char        s_mac12[13];       // 12 位小写十六进制完整 MAC（链接 s= 用）
 static char        s_name[16];        // "Watcha-XXXXXX"
 static uint8_t     s_addr_type;
 static uint16_t    s_res_handle;
 static atomic_bool s_updated;
 
-// 省电：开机和每次按键后 30 秒内快速广播（1s，与亮屏时长一致），之后放慢到 10s；连接中不动广播
-#define FAST_WINDOW_US (30LL * 1000000)
-static volatile bool s_fast = true;
-static volatile bool s_conn = false;
-static volatile bool s_started = false;
-static volatile bool s_stopped = false;   // 省电：10 分钟无按键后停了广播,按键后由 ble_sync_resume 恢复
-static esp_timer_handle_t s_slow_timer;
+static volatile bool s_conn = false;      // 已连接
+static volatile bool s_host_ready = false;  // NimBLE 主机已同步、地址就绪
+static volatile bool s_adv = false;        // 同步页要求广播中（只在同步页为真）
 
 static uint8_t  s_buf[MAX_JSON + 1];
 static uint16_t s_len;
@@ -70,6 +67,14 @@ void profile_load(profile_t *p)
 
 bool ble_sync_take_updated(void) { return atomic_exchange(&s_updated, false); }
 const char *ble_sync_device_id(void) { return s_id; }
+const char *ble_sync_mac12(void) { return s_mac12; }
+
+// 出厂密钥：存在 NVS watcha/pass_k（机身二维码上的 k）。没有写入则返回 false，
+// 此时链接只带 s=<mac>，仍能定位到本机（k 对跳转页面不是必需）。
+bool ble_sync_pass_key(char *buf, size_t len)
+{
+    return store_get_str("pass_k", buf, len) && buf[0];
+}
 
 // 截到 ≤max 字节且不劈开 UTF-8 字符
 static void utf8_copy(char *dst, const char *src, size_t max)
@@ -192,16 +197,16 @@ static int gap_event(struct ble_gap_event *e, void *arg)
     switch (e->type) {
     case BLE_GAP_EVENT_CONNECT:
         ESP_LOGI(TAG, "connect %s", e->connect.status == 0 ? "ok" : "fail");
-        if (e->connect.status != 0) advertise(); else s_conn = true;
+        if (e->connect.status != 0) { if (s_adv) advertise(); } else s_conn = true;
         s_len = 0; s_expect = 0; s_bad = false;
         break;
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGI(TAG, "disconnect");
         s_conn = false;
-        advertise();
+        if (s_adv) advertise();   // 仍在同步页：继续等下一次连接；离页后 s_adv=false 不再重播
         break;
     case BLE_GAP_EVENT_ADV_COMPLETE:
-        advertise();
+        if (s_adv) advertise();
         break;
     default:
         break;
@@ -211,6 +216,8 @@ static int gap_event(struct ble_gap_event *e, void *arg)
 
 static void advertise(void)
 {
+    if (!s_host_ready || !s_adv || s_conn) return;
+
     struct ble_hs_adv_fields f = { 0 };
     f.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
     f.name = (const uint8_t *)s_name;
@@ -227,69 +234,37 @@ static void advertise(void)
     struct ble_gap_adv_params p = { 0 };
     p.conn_mode = BLE_GAP_CONN_MODE_UND;
     p.disc_mode = BLE_GAP_DISC_MODE_GEN;
-    p.itvl_min  = s_fast ? BLE_GAP_ADV_ITVL_MS(1000) : BLE_GAP_ADV_ITVL_MS(10000);
-    p.itvl_max  = s_fast ? BLE_GAP_ADV_ITVL_MS(1000) : BLE_GAP_ADV_ITVL_MS(10000);
+    p.itvl_min  = BLE_GAP_ADV_ITVL_MS(1000);   // 同步页只开 ≤90 秒，固定快速广播
+    p.itvl_max  = BLE_GAP_ADV_ITVL_MS(1000);
     if (rc == 0) rc = ble_gap_adv_start(s_addr_type, NULL, BLE_HS_FOREVER, &p, gap_event, NULL);
     if (rc != 0 && rc != BLE_HS_EALREADY) ESP_LOGE(TAG, "advertise rc=%d", rc);
 }
 
-// 下面三个都只在 esp_timer 任务里被调（定时器回调、按键回调），彼此不会并发
-static void restart_adv(void)
+// 进同步页：开始广播（只有此时蓝牙才可被发现/连接）。
+void ble_sync_adv_begin(void)
 {
-    if (!s_started || s_conn) return;
+    if (s_adv) return;
+    s_adv = true;
+    s_len = 0; s_expect = 0; s_bad = false;
+    if (s_host_ready) advertise();
+    ESP_LOGI(TAG, "adv begin");
+}
+
+// 离同步页：停止广播并断开当前连接，之后蓝牙不可见。
+void ble_sync_adv_end(void)
+{
+    if (!s_adv) return;
+    s_adv = false;
     ble_gap_adv_stop();
-    advertise();
-}
-
-static void slow_cb(void *arg)
-{
-    (void)arg;
-    if (!s_fast) return;
-    s_fast = false;
-    restart_adv();
-    ESP_LOGI(TAG, "adv slow");
-}
-
-// 省电：长时间无按键后停掉广播(连接中不动,免得打断正在进行的同步)。
-// 与 restart_adv/slow_cb/poke 一样只在 esp_timer/LVGL 任务里被调,彼此不并发。
-void ble_sync_stop(void)
-{
-    if (!s_started || s_conn || s_stopped) return;   // 连接中保留广播,不打断同步
-    if (s_slow_timer) esp_timer_stop(s_slow_timer);
-    ble_gap_adv_stop();
-    s_stopped = true;
-    ESP_LOGI(TAG, "adv stop");
-}
-
-// 省电：按键后恢复广播并切回快速窗口。
-void ble_sync_resume(void)
-{
-    if (!s_stopped) return;
-    s_stopped = false;
-    s_fast = true;
-    if (s_slow_timer) {
-        esp_timer_stop(s_slow_timer);
-        esp_timer_start_once(s_slow_timer, FAST_WINDOW_US);
-    }
-    restart_adv();
-    ESP_LOGI(TAG, "adv resume");
-}
-
-void ble_sync_poke(void)
-{
-    if (s_stopped) { ble_sync_resume(); return; }   // 停播后第一下按键先把广播救回来(已切回快速窗口)
-    if (s_slow_timer) {
-        esp_timer_stop(s_slow_timer);
-        esp_timer_start_once(s_slow_timer, FAST_WINDOW_US);
-    }
-    if (!s_fast) { s_fast = true; restart_adv(); ESP_LOGI(TAG, "adv fast"); }
+    if (s_conn) ble_gap_terminate(BLE_HS_CONN_HANDLE_NONE, BLE_ERR_REM_USER_CONN_TERM);
+    ESP_LOGI(TAG, "adv end");
 }
 
 static void on_sync(void)
 {
     int rc = ble_hs_util_ensure_addr(0);
     if (rc == 0) rc = ble_hs_id_infer_auto(0, &s_addr_type);
-    if (rc == 0) { advertise(); s_started = true; }
+    if (rc == 0) { s_host_ready = true; if (s_adv) advertise(); }   // 只有同步页开了广播才真正播
     else ESP_LOGE(TAG, "addr rc=%d", rc);
 }
 
@@ -309,6 +284,12 @@ void ble_sync_start(void)
     snprintf(s_id, sizeof s_id, "%02X%02X%02X", mac[3], mac[4], mac[5]);
     snprintf(s_name, sizeof s_name, "Watcha-%s", s_id);
 
+    // 扫码链接 s= 用出厂基础 MAC（12 位小写，与机身二维码一致）
+    uint8_t base[6] = { 0 };
+    esp_read_mac(base, ESP_MAC_WIFI_STA);
+    snprintf(s_mac12, sizeof s_mac12, "%02x%02x%02x%02x%02x%02x",
+             base[0], base[1], base[2], base[3], base[4], base[5]);
+
     if (nimble_port_init() != ESP_OK) { ESP_LOGE(TAG, "nimble init failed"); return; }
     ble_svc_gap_init();
     ble_svc_gatt_init();
@@ -317,10 +298,8 @@ void ble_sync_start(void)
         ESP_LOGE(TAG, "gatt register failed");
         return;
     }
-    const esp_timer_create_args_t ta = { .callback = slow_cb, .name = "adv_slow" };
-    if (esp_timer_create(&ta, &s_slow_timer) == ESP_OK) esp_timer_start_once(s_slow_timer, FAST_WINDOW_US);
     ble_hs_cfg.sync_cb  = on_sync;
     ble_hs_cfg.reset_cb = on_reset;
     nimble_port_freertos_init(host_task);
-    ESP_LOGI(TAG, "start as %s", s_name);
+    ESP_LOGI(TAG, "host ready as %s (adv only on sync page)", s_name);
 }
