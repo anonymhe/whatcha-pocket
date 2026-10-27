@@ -16,6 +16,7 @@ This directory contains AI Passport engineering rules and reusable workflows, gr
 - [build-and-test.md](engineering/build-and-test.md): ESP-IDF build and validation.
 - [ble-recovery-compatibility.md](engineering/ble-recovery-compatibility.md): mandatory mini-program BLE install artifact, partition, and bootloader contract.
 - [coding-conventions.md](engineering/coding-conventions.md): source-code and resource conventions.
+- [lvgl-chinese-fonts.md](engineering/lvgl-chinese-fonts.md): the shipped CJK fonts, staying inside their coverage, and Chinese-text troubleshooting.
 
 ## CI
 

@@ -12,14 +12,16 @@ These rules apply equally to human contributors and AI agents. Documentation is 
 - Simplified Chinese is provided at the paired path `name.zh_CN.md`.
 - Both files begin with reciprocal language links. Keep their headings, facts, examples, safety warnings, and links aligned in the same change.
 - English default prose must not contain Chinese text. The `简体中文` switch label is the only allowed CJK text on an English page.
-- Code, commands, paths, URLs, identifiers, and data fields remain unchanged between translations where appropriate.
+- Established product proper nouns whose canonical form is Chinese (such as the `猹` creature name and the `口袋上新` / `口袋常驻` section names) may appear as a short gloss after their English name, like the `简体中文` label. The repository check keeps a small allowlist of these.
+- Code, commands, paths, URLs, identifiers, and data fields remain unchanged between translations where appropriate. Chinese string literals inside code examples are not prose and are exempt from the English-prose rule.
+- A few product-facing fork documents (`README.md`, `CHACKER.md`, `ASSETS_LICENSE.md`) are read by end users rather than AI agents and are deliberately single-file bilingual. They carry both languages in one file instead of a paired path; the repository check allowlists them.
 - The repository check rejects an unpaired document, a missing language switch, or CJK prose in an English default file.
 
 ## Task-based context
 
 - Every task starts with root `AGENTS.md` only.
 - Follow its routing table and read only documents and source relevant to the change.
-- Use `docs/README.md` for the overview and `docs/README.md` for discovery.
+- Use `docs/README.md` for the product overview and the documentation index.
 - Update the authoritative source of a changed fact and documents that directly reference it; do not create a second source of truth.
 
 ## Responsibilities
@@ -30,11 +32,11 @@ These rules apply equally to human contributors and AI agents. Documentation is 
 
 ## Placement
 
-- Keep the tracked repository root limited to tool-discovery files (`AGENTS.md`, `CLAUDE.md` and their translations), an optional fork README pair, license/build manifests, and ESP-IDF configuration.
+- Keep the tracked repository root limited to tool-discovery files (`AGENTS.md`, `CLAUDE.md` and their translations), the fork's product-facing documents (`README.md`, `CHACKER.md`, `ASSETS_LICENSE.md`), license/build manifests, and ESP-IDF configuration.
 - Put project documentation and history in `docs/`, grouped by contribution, development, hardware, and software responsibility.
 - Put GitHub-recognized community files, templates, issue forms, and workflows in `.github/`.
 - Put reusable binary/source assets in `assets/`, project skills in `skills/`, and automation in `tools/`.
-- Repository checks reject additional root Markdown. Do not add a root document merely for visibility; link it from `docs/README.md` instead.
+- Repository checks allowlist the root Markdown above and reject any other root document. Do not add a root document merely for visibility; link it from `docs/README.md` instead.
 
 Do not create empty document scaffolding without a concrete purpose. Register added documents in `docs/README.md` or their directory index and update links when moving or deleting files.
 

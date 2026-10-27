@@ -69,7 +69,7 @@ Cha artwork is licensed CC BY-NC 4.0; see [`ASSETS_LICENSE.md`](../../ASSETS_LIC
 
 ## 6. Networking (experimental, not recommended yet)
 
-The chip has Wi-Fi, but with BLE sync always on, heap is too tight for reliable HTTPS. Tell the user and suggest an offline version first. If you must try: credentials go in the gitignored `main/apps/wifi_config.h` (never commit or copy them elsewhere; the build must work without it), network work runs in a worker task that never touches LVGL, and Wi-Fi is stopped and deinitialized right after fetching. Public Watcha API: `GET https://watcha.cn/api/v2/products?skip=0&limit=5`.
+The chip has Wi-Fi, but with BLE sync running while the device is in use, heap is too tight for reliable HTTPS. Tell the user and suggest an offline version first. If you must try: credentials go in the gitignored `main/apps/wifi_config.h` (never commit or copy them elsewhere; the build must work without it), network work runs in a worker task that never touches LVGL, and Wi-Fi is stopped and deinitialized right after fetching. Public Watcha API: `GET https://watcha.cn/api/v2/products?skip=0&limit=5`.
 
 ## 7. Build, flash, deliver
 

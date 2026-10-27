@@ -8,6 +8,10 @@
 
 - Hardened the audio power-down used by the inactivity timeout: the codec now runs the full ES8311 suspend register sequence with readback verification and a retry, replacing the previous plain codec close, so the codec reliably reaches its low-power state and resumes cleanly on the next key press. Also added verified CW2017 battery-gauge sleep and deep-sleep audio pin isolation for future shutdown paths.
 
+- Added an LVGL Chinese-text guide describing the shipped `font_fusion12` CJK font and ASCII `font_ps8`/`font_ps16`, how to stay inside their coverage with `check_glyphs.py`, and a missing-glyph troubleshooting order; corrected the coding conventions, which still described the upstream Montserrat-only baseline.
+
+- Shortened the idle backlight dim from sixty to thirty seconds without key input, so the screen spends less time at full brightness while idle; pressing any key restores full brightness. Pomodoro keep-awake sessions are unaffected.
+
 - Added a 10-minute inactivity timeout: after no key input for ten minutes the device stops BLE advertising and powers down the audio codec to save power; pressing any key restores both the advertising and the audio codec. Pomodoro keep-awake sessions are unaffected.
 
 - Added the supplied 80-byte CW2017 profile for the specified 520 mAh cell, including content/update-flag checks, verified writes, the required restart sequence, and bounded SOC-readiness polling.

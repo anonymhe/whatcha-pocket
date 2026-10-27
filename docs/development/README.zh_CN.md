@@ -25,6 +25,7 @@
 - [build-and-test.zh_CN.md](engineering/build-and-test.zh_CN.md)：构建与验证（ESP-IDF 命令、逻辑测试、改动验证要求）。
 - [ble-recovery-compatibility.zh_CN.md](engineering/ble-recovery-compatibility.zh_CN.md)：小程序 BLE 安装所需的产物、分区与 bootloader 强制契约。
 - [coding-conventions.zh_CN.md](engineering/coding-conventions.zh_CN.md)：代码约定（语言风格、复用、注释、测试同步、资源约束等）。
+- [lvgl-chinese-fonts.zh_CN.md](engineering/lvgl-chinese-fonts.zh_CN.md)：内置的中文字体、如何停留在覆盖范围内，以及中文显示排查。
 
 ## CI（ci）
 
