@@ -26,7 +26,30 @@ ROOT_MARKDOWN_ALLOWLIST = {
     "CLAUDE.zh_CN.md",
     "README.md",
     "README.zh_CN.md",
+    "CHACKER.md",
+    "ASSETS_LICENSE.md",
 }
+
+# Product-facing fork documents are single-file and bilingual by design: the
+# GitHub landing README, the CHACKER persona, and the artwork license are read
+# by end users rather than AI agents, so they carry both languages in one file
+# and do not follow the upstream paired-path language rule.
+BILINGUAL_PRODUCT_DOCS = {
+    "README.md",
+    "CHACKER.md",
+    "ASSETS_LICENSE.md",
+}
+
+# Product proper nouns whose canonical form is Chinese. They appear as
+# parenthetical glosses after their English name in English default prose,
+# exactly like the 简体中文 language-switch label, and must not trip the
+# English-prose check.
+PRODUCT_NAME_GLOSSES = (
+    "口袋上新",
+    "口袋常驻",
+    "观猹",
+    "猹",
+)
 
 
 def git_files() -> list[Path]:
@@ -101,6 +124,19 @@ def check_markdown_links(files: list[Path], errors: list[str]) -> None:
                 errors.append(f"{path.relative_to(ROOT)}: missing link target {target}")
 
 
+def _strip_code(text: str) -> str:
+    """Blank out fenced blocks and inline code spans, keeping line numbers.
+
+    Code examples may legitimately contain Chinese string literals (e.g. an app
+    display name), which are not prose and must not trip the English-prose rule.
+    """
+    def blank(match: re.Match[str]) -> str:
+        return re.sub(r"[^\n]", " ", match.group(0))
+
+    without_fences = re.sub(r"(?ms)^[ \t]*```.*?^[ \t]*```[ \t]*$", blank, text)
+    return re.sub(r"`[^`\n]*`", blank, without_fences)
+
+
 def check_document_languages(files: list[Path], errors: list[str]) -> None:
     """Require an English default and a linked Simplified Chinese peer."""
     markdown = {path.resolve() for path in files if path.suffix.lower() == ".md"}
@@ -123,6 +159,11 @@ def check_document_languages(files: list[Path], errors: list[str]) -> None:
                 )
             continue
 
+        # Bilingual product documents carry both languages in a single file and
+        # are exempt from the paired-path rule and the English-prose check.
+        if name in BILINGUAL_PRODUCT_DOCS:
+            continue
+
         chinese_name = f"{path.stem}.zh_CN.md"
         chinese_path = path.with_name(chinese_name).resolve()
         if chinese_path not in markdown:
@@ -134,7 +175,9 @@ def check_document_languages(files: list[Path], errors: list[str]) -> None:
                 f"{path.relative_to(ROOT)}: missing top language link to {chinese_name}"
             )
 
-        english_prose = text.replace("简体中文", "")
+        english_prose = _strip_code(text).replace("简体中文", "")
+        for gloss in PRODUCT_NAME_GLOSSES:
+            english_prose = english_prose.replace(gloss, "")
         match = CJK_RE.search(english_prose)
         if match:
             line = english_prose.count("\n", 0, match.start()) + 1
