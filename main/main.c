@@ -4,10 +4,11 @@
 #include "bsp_button.h"
 #include "bsp_battery.h"
 #include "bsp_pins.h"
-#include "demo.h"
 #include "lvgl.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 
 static const char *TAG = "main";
 
@@ -16,16 +17,13 @@ static const char *TAG = "main";
 #include "sfx.h"
 #include "dbg.h"
 #include "ble_sync.h"
-void boot_anim_start(void (*done)(void));
-void boot_anim_skip(void);
+#include "boot_anim.h"
 static bool s_ready = false;
 static int64_t s_skip_us = 0;   // 跳过开机动画的时刻：之后 600ms 内的按键（同一下的松开）丢掉，免得直接点进功能
 static void card_ready(void) { page_open(PAGE_HOME); s_ready = true; }
 
 // 按键回调跑在 esp_timer 任务里(iot_button 实现)，栈小且不该在里面碰 LVGL。
 // 这里只把事件塞进队列；LVGL 任务里一个 10ms 的 lv_timer 取出来执行 page_key。
-#include "freertos/FreeRTOS.h"
-#include "freertos/queue.h"
 typedef struct { uint8_t btn, ev; } key_evt_t;
 static QueueHandle_t s_keyq;
 
