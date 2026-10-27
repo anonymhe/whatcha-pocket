@@ -25,7 +25,8 @@ typedef struct {
 #define PAGE_INTRO  7        // 功能说明页（进入 PAGE_APP_BASE+n 前先看这里）
 #define PAGE_LAB    8        // 口袋上新（二创玩法列表）
 #define PAGE_APP    9        // 当前打开的二创玩法
-#define PAGE_COUNT  10
+#define PAGE_SYNC   10       // 同步页（连接观猹小程序）
+#define PAGE_COUNT  11
 
 void page_open(int idx);                         // 切页
 void page_open_app(const page_t *app);           // 打开口袋上新里的玩法

@@ -15,6 +15,7 @@ extern const page_t page_muyu;       // 木鱼猹
 extern const page_t page_1024;       // 1024
 extern const page_t page_intro;    // 说明页
 extern const page_t page_lab;      // 口袋上新
+extern const page_t page_sync;     // 同步页
 
 // 二创玩法统一走一个代理页，实际页面由 page_open_app 指定
 static const page_t *s_app;
@@ -26,7 +27,7 @@ static const page_t page_app_proxy = { "app", app_enter, app_exit, app_key };
 static const page_t *PAGES[PAGE_COUNT] = {
     &page_home_def, &page_fortune, &page_pomo, &page_melon,
     &page_type, &page_muyu, &page_1024, &page_intro,
-    &page_lab, &page_app_proxy,
+    &page_lab, &page_app_proxy, &page_sync,
 };
 static int s_cur = -1;
 

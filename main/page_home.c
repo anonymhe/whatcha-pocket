@@ -358,7 +358,12 @@ static void home_exit(void)
 
 static void home_key(bsp_btn_t btn, bsp_btn_ev_t ev)
 {
-    if (btn == BSP_BTN_UP && ev == BSP_BTN_LONG) {          // 首页长按 ▲：进口袋上新
+    if (btn == BSP_BTN_UP && ev == BSP_BTN_LONG) {          // 首页长按 ▲：进同步页
+        sfx_play(SFX_OK);
+        page_open(PAGE_SYNC);
+        return;
+    }
+    if (btn == BSP_BTN_DOWN && ev == BSP_BTN_LONG) {        // 首页长按 ▼：进口袋上新
         sfx_play(SFX_OK);
         page_open(PAGE_LAB);
         return;
