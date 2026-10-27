@@ -63,6 +63,7 @@ idf_component_register(
          "page_type.c"
          "page_intro.c"
          "page_sync.c"
+         "page_guide.c"
          "page_melon.c"
          "page_muyu.c"
          "page_1024.c"

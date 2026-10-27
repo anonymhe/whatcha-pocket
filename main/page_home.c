@@ -28,58 +28,55 @@ LV_IMAGE_DECLARE(ic_tiles);
 
 // 右侧信息区（头像右边）：标题 + 名称 + badge
 // WATCHA 作为 RPG 角色的「属地名」贴在名称正上方；名称+badge 整体下移，与头像高度对齐
-#define INFO_X    96              // 右侧区左边界
-#define TITLE_Y   (AV_Y + 5)              // 标题（属地名）贴在名称上方
-#define NAME_Y    (TITLE_Y + 10)              // 名称下移，使名称+badge 与头像垂直居中对齐
-#define BADGE_IY  (NAME_Y + 29)   // badge 在名称下方
+#define INFO_X    (AV_X + 78)              // 右侧区左边界
+#define TITLE_Y   (AV_Y + 6)              // 标题（属地名）贴在名称上方
+#define NAME_Y    (TITLE_Y + 12)              // 名称下移，使名称+badge 与头像垂直居中对齐
+#define BADGE_IY  (NAME_Y + 27)   // badge 在名称下方
 #define ICON_CELL 1               // 点阵图标每点像素（11×11 → 11px 见方）
 #define ICON_W    (11 * ICON_CELL)
 
 // RPG 状态区：与头像同缩进（左对齐 AV_X），头像下方三行（HP / ATK+DEF / Coins）。
 // 全部相对定位：行距 SROW_DY，图标宽 ICON_W，数值离图标 STAT_GAP，第二列再偏 STAT_COL2。
 #define STAT_X     AV_X                         // 与头像/表情包同缩进
-#define STAT_GAP   5                            // 图标与数值的水平间距
-#define STAT_COL2  80                           // ATK→DEF 的列间距
-#define SROW_DY    19                           // 三行的行距
-#define SROW1_Y    (AV_Y + 66)                  // 第一行 HP
+#define STAT_GAP   6                            // 图标与数值的水平间距
+#define STAT_COL2  96                           // ATK→DEF 的列间距
+#define SROW_DY    22                           // 三行的行距
+#define SROW1_Y    (AV_Y + 72)                  // 第一行 HP
 #define SROW2_Y    (SROW1_Y + SROW_DY)          // 第二行 ATK / DEF
 #define SROW3_Y    (SROW2_Y + SROW_DY)          // 第三行 Coins
-#define STAT_DIV_Y (SROW3_Y + 16)               // 状态区下方分隔线
+#define STAT_DIV_Y (SROW3_Y + 20)               // 状态区下方分隔线
 
 #define HP_BAR_X   (STAT_X + ICON_W + 6)        // HP 血条起点（心形图标之后）
-#define HP_BAR_W   130                          // HP 血条满宽（拉到正常宽度）
-#define HP_BAR_H   13
+#define HP_BAR_W   128                          // HP 血条满宽（拉到正常宽度）
+#define HP_BAR_H   ICON_W
 #define ATK_X      STAT_X                       // ATK 列
 #define DEF_X      (STAT_X + STAT_COL2)         // DEF 列
 #define COIN_X     STAT_X                       // Coins 列（独立一行，回到首列）
 
-#define GRID_X    18
-#define GRID_Y    (STAT_DIV_Y + 6)
-#define CARD_W    60
-#define CARD_H    52
-#define CARD_GX   72
-#define CARD_GY   60
+// 应用列表：上下翻页的长方形卡片（左 icon / 右 title+desc）
+// 选中卡居中显示，上/下相邻卡各漏出一截作翻页提示（滚动式，首尾相接）
+#define LIST_X     16                            // 卡片左边界
+#define LIST_W     208                           // 卡片宽度
+#define CARD_H     48                            // 卡片高度
+#define CARD_GAP   8                             // 卡片间距
+#define CARD_STEP  (CARD_H + CARD_GAP)           // 相邻卡中心距
+#define LIST_TOP   (STAT_DIV_Y + 1)              // 列表可视区上边界（紧贴分隔线）
+#define LIST_VIS_H (276 - LIST_TOP)              // 列表可视区高度
+#define LIST_MID   ((LIST_VIS_H - CARD_H) / 2)   // 选中卡的 y（相对裁剪容器）
 
 static lv_obj_t *s_scr;
 static lv_obj_t *s_av;
 static lv_obj_t *s_badge, *s_badge_t;
 static lv_obj_t *s_name;
 static lv_obj_t *s_hp, *s_hp_bar, *s_atk, *s_def, *s_coins;   // RPG 数值
-static lv_obj_t *s_cards[6];
-static lv_obj_t *s_labels[6];
-static lv_obj_t *s_icons[6];
+#define NITEMS 8
+static lv_obj_t *s_cards[NITEMS];
+static lv_obj_t *s_labels[NITEMS];
+static lv_obj_t *s_descs[NITEMS];
+static lv_obj_t *s_icons[NITEMS];
 static lv_timer_t *s_timer;
 static lv_timer_t *s_sync_timer;
 static int s_sel = 0;
-
-static const struct { const char *name; const lv_image_dsc_t *icon; const lv_font_t *font; } ITEMS[6] = {
-    {"好运猹", &ic_clover,     &font_fusion12},
-    {"番茄猹", &ic_tomato,     &font_fusion12},
-    {"吃瓜猹", &ic_melon,      &font_fusion12},
-    {"什么猹", &ic_type,       &font_fusion12},
-    {"木鱼猹", &ic_cha_mallet, &font_fusion12},
-    {"1024",   &ic_tiles,      &font_ps8},
-};
 
 static lv_obj_t *block(lv_obj_t *p, int x, int y, int w, int h, uint32_t c)
 {
@@ -129,58 +126,137 @@ static lv_obj_t *icon_make(lv_obj_t *parent, const char *const rows[11], int cel
     return box;
 }
 
+// 两色点阵图标：'#' 用 col_a，'o' 用 col_b，其它透明；每点画 cell×cell 方块。
+// 同色连续点合并成横条省对象。22×22（cell=2）正好与现有 ic_* 位图同尺寸。
+static lv_obj_t *icon_make2(lv_obj_t *parent, const char *const rows[11], int cell,
+                            uint32_t col_a, uint32_t col_b)
+{
+    lv_obj_t *box = lv_obj_create(parent);
+    lv_obj_remove_flag(box, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(box, 11 * cell, 11 * cell);
+    lv_obj_set_style_radius(box, 0, 0);
+    lv_obj_set_style_border_width(box, 0, 0);
+    lv_obj_set_style_pad_all(box, 0, 0);
+    lv_obj_set_style_bg_opa(box, LV_OPA_TRANSP, 0);
+    for (int r = 0; r < 11; r++) {
+        const char *row = rows[r];
+        int c = 0;
+        while (c < 11) {
+            char ch = row[c];
+            if (ch != '#' && ch != 'o') { c++; continue; }
+            int run = 1;
+            while (c + run < 11 && row[c + run] == ch) run++;
+            block(box, c * cell, r * cell, run * cell, cell, ch == '#' ? col_a : col_b);
+            c += run;
+        }
+    }
+    return box;
+}
+
 // 四维图标点阵（11×11）
 static const char *const ICON_HP[11] = {    // 爱心（左右对称，顶部圆润、底部收尖）
-    "..###.###..", ".#########.", "###########", "###########",
-    "###########", ".#########.", "..#######..", "...#####...",
-    "...#####...", "....###....", ".....#.....",
+    "..##...##..", 
+    ".####.####.", 
+    "###########", 
+    "###########",
+    "###########", 
+    "###########", 
+    ".#########.", 
+    "..#######..",
+    "...#####...", 
+    "....###....", 
+    ".....#.....",
 };
 static const char *const ICON_ATK[11] = {   // 剑
-    ".........##", "........###", ".......###.", "......###..",
-    ".....###...", "....###....", "...###.....", ".#.##......",
-    "###.#......", ".###.......", "##.........",
+    "....#....##", 
+    ".##..#..###", 
+    "...#...####", 
+    "##....####.",
+    "..#..####..", 
+    "....####...", 
+    "...####....", 
+    ".#.###.....",
+    "###.###....", 
+    ".####.#....", 
+    "##...#.....",
 };
 static const char *const ICON_DEF[11] = {   // 盾
-    "..#######..", ".#########.", ".#########.", ".####.####.",
-    ".#########.", "..#######..", "..#######..", "...#####...",
-    "....###....", ".....#.....", "...........",
+    "..#######..", 
+    ".#########.", 
+    ".####.####.", 
+    ".####.####.",
+    ".##..#..##.",
+    ".####.####.", 
+    "..###.###..", 
+    "..#######..", 
+    "...#####...",
+    "....###....", 
+    ".....#.....", 
 };
 static const char *const ICON_COIN[11] = {  // 金币
-    "...#####...", ".##.....##.", ".#..###..#.", "##..#.#..##",
-    "##..#.#..##", "##..#.#..##", "##..###..##", ".#.......#.",
-    ".##.....##.", "...#####...", "...........",
+    "...#####...", 
+    ".##.....##.", 
+    ".#..###..#.", 
+    "#...#.#...#",
+    "#..#...#..#", 
+    "#..#...#..#", 
+    "#..#...#..#", 
+    "#...#.#...#", 
+    ".#..###..#.",
+    ".##.....##.", 
+    "...#####...", 
 };
 
-static bool is_ascii(const char *s)
-{
-    for (; *s; s++) if ((uint8_t)*s >= 0x80) return false;
-    return true;
-}
+// 使用说明：翻开的书（左右两页 + 中缝 'o'）
+static const char *const ICON_BOOK[11] = {
+    "...........",
+    "...##......",
+    ".####.####.",
+    ".#.###...#.",
+    ".#.###.###.",
+    ".#.###...#.",
+    ".#.###.###.",
+    ".#.###...#.",
+    ".#..##...#.",
+    ".####.####.",
+    "...........",
+};
+// 猹工坊：游戏手柄（圆角机身 + 左十字键 'o' + 右两键 'o'）
+static const char *const ICON_PAD[11] = {
+    ".....#.....",
+    ".....#.....",
+    ".#########.",
+    "###########",
+    "##.#####.##",
+    "#.#.###.#.#",
+    "##.#####.##",
+    "###########",
+    "####...####",
+    ".##.....##.",
+    "...........",
+};
 
-// 原地去掉字库里没有字形的字符（emoji、花体字母、零宽字符等），免得显示成方框；ASCII 一律保留
-static void strip_missing(char *s, const lv_font_t *f)
-{
-    char *w = s;
-    const char *r = s;
-    while (*r) {
-        uint8_t c = (uint8_t)*r;
-        int n = c < 0x80 ? 1 : (c >> 5) == 0x6 ? 2 : (c >> 4) == 0xE ? 3 : (c >> 3) == 0x1E ? 4 : 1;
-        uint32_t cp = n == 1 ? c : n == 2 ? (c & 0x1F) : n == 3 ? (c & 0x0F) : (c & 0x07);
-        bool ok = !(n == 1 && c >= 0x80);              // 孤立的续字节/非法首字节丢掉
-        for (int k = 1; k < n; k++) {
-            uint8_t d = (uint8_t)r[k];
-            if ((d & 0xC0) != 0x80) { ok = false; n = k; break; }
-            cp = (cp << 6) | (d & 0x3F);
-        }
-        if (ok && cp >= 0x80) {
-            lv_font_glyph_dsc_t g;
-            ok = lv_font_get_glyph_dsc(f, &g, cp, 0) && !g.is_placeholder;
-        }
-        if (ok) { memmove(w, r, n); w += n; }
-        r += n;
-    }
-    *w = 0;
-}
+// 首页卡片列表：第一个是使用说明，中间六个是功能，最后一个是猹工坊。
+// 图标两种来源：IC_IMG 用现成位图（ic_*），IC_GLYPH 用两色点阵（icon_make2）。
+typedef enum { ACT_GUIDE, ACT_APP, ACT_LAB } card_act_t;
+static const struct {
+    const char *name;
+    const char *desc;
+    bool glyph;                       // true=点阵图标，false=位图
+    const lv_image_dsc_t *img;        // glyph=false 时用
+    const char *const *pat;           // glyph=true 时用（11 行）
+    card_act_t act;
+    int app_idx;                      // act=ACT_APP 时对应的功能序号（0..5）
+} ITEMS[NITEMS] = {
+    {"使用说明", "主页玩法与仓库",  true,  NULL,           ICON_BOOK, ACT_GUIDE, 0},
+    {"好运猹",   "每日运势 一键获取", false, &ic_clover,     NULL,      ACT_APP,   0},
+    {"番茄猹",   "专注计时器",       false, &ic_tomato,     NULL,      ACT_APP,   1},
+    {"吃瓜猹",   "反应速度测试",     false, &ic_melon,      NULL,      ACT_APP,   2},
+    {"什么猹",   "AI人格测试",       false, &ic_type,       NULL,      ACT_APP,   3},
+    {"木鱼猹",   "电子木鱼",         false, &ic_cha_mallet, NULL,      ACT_APP,   4},
+    {"1024",     "合成1024",         false, &ic_tiles,      NULL,      ACT_APP,   5},
+    {"猹工坊",   "社区二创玩法",     true,  NULL,           ICON_PAD,  ACT_LAB,   0},
+};
 
 // 把同步资料画到身份区（首次进页 + 收到新同步时调用）
 static void apply_profile(void)
@@ -210,8 +286,6 @@ static void apply_profile(void)
         char nick[sizeof p.nick];
         memcpy(nick, p.nick, sizeof nick);
         nick[sizeof nick - 1] = 0;
-        if (!is_ascii(nick)) strip_missing(nick, &font_fusion20);
-        if (!nick[0]) strcpy(nick, "--");                 // 全是 emoji 之类：去完就空了
         lv_label_set_text(s_name, nick);
         lv_obj_set_style_text_color(s_name, lv_color_hex(p.tier == TIER_GOLD ? C_GOLD : C_TEXT), 0);
     }
@@ -233,13 +307,26 @@ static void apply_profile(void)
 
 static void refresh_sel(void)
 {
-    for (int i = 0; i < 6; i++) {
-        bool on = (i == s_sel);
+    for (int i = 0; i < NITEMS; i++) {
+        int off = i - s_sel;                          // 以选中卡为中心的相对偏移
+        if (off >  NITEMS / 2) off -= NITEMS;          // 环形换算，取最近方向
+        if (off < -NITEMS / 2) off += NITEMS;
+        bool on = (off == 0);
+        bool peek = (off >= -1 && off <= 1);          // 只显示中心及上下各一张
+        if (!peek) {
+            lv_obj_add_flag(s_cards[i], LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
+        lv_obj_remove_flag(s_cards[i], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_y(s_cards[i], LIST_MID + off * CARD_STEP);
         lv_obj_set_style_border_color(s_cards[i], lv_color_hex(on ? C_GREEN : C_LINE), 0);
         lv_obj_set_style_border_width(s_cards[i], on ? 2 : 1, 0);
+        lv_obj_set_style_bg_color(s_cards[i], lv_color_hex(on ? C_CARD : C_BG), 0);
         lv_obj_set_style_text_color(s_labels[i], lv_color_hex(on ? C_GREEN : C_TEXT), 0);
-        lv_obj_set_style_image_recolor(s_icons[i], lv_color_hex(on ? C_GREEN : 0xFFFFFF), 0);
-        lv_obj_set_style_image_recolor_opa(s_icons[i], LV_OPA_COVER, 0);
+        if (!ITEMS[i].glyph) {                        // 位图图标随选中变绿；点阵图标用固定配色
+            lv_obj_set_style_image_recolor(s_icons[i], lv_color_hex(on ? C_GREEN : 0xFFFFFF), 0);
+            lv_obj_set_style_image_recolor_opa(s_icons[i], LV_OPA_COVER, 0);
+        }
     }
 }
 
@@ -312,21 +399,39 @@ static void home_enter(void)
     ble_sync_take_updated();   // 进页即读最新，旧标志作废
     apply_profile();
 
-    // 六宫格
-    for (int i = 0; i < 6; i++) {
-        int r = i / 3, c = i % 3;
-        int x = GRID_X + c * CARD_GX, y = GRID_Y + r * CARD_GY;
-        lv_obj_t *card = block(s_scr, x, y, CARD_W, CARD_H, C_CARD);
+    // 应用列表：上下翻页的长方形卡片，裁剪容器把漏出的相邻卡裁在可视区内
+    lv_obj_t *clip = block(s_scr, 0, LIST_TOP, 240, LIST_VIS_H, C_BG);
+    lv_obj_set_style_clip_corner(clip, true, 0);
+    for (int i = 0; i < NITEMS; i++) {
+        lv_obj_t *card = block(clip, LIST_X, 0, LIST_W, CARD_H, C_BG);
+        lv_obj_set_style_radius(card, 6, 0);
         lv_obj_set_style_border_width(card, 1, 0);
         lv_obj_set_style_border_color(card, lv_color_hex(C_LINE), 0);
-        lv_obj_t *ic = lv_image_create(card);
-        lv_image_set_src(ic, ITEMS[i].icon);
-        lv_obj_align(ic, LV_ALIGN_TOP_MID, 0, 6);
+        lv_obj_t *ic;
+        if (ITEMS[i].glyph) {                         // 两色点阵图标（22×22，cell=2）
+            ic = icon_make2(card, ITEMS[i].pat, 2, C_GREEN, C_GOLD);
+        } else {                                      // 现成位图图标
+            ic = lv_image_create(card);
+            lv_image_set_src(ic, ITEMS[i].img);
+        }
+        lv_obj_align(ic, LV_ALIGN_LEFT_MID, 10, 0);
         s_icons[i] = ic;
-        lv_obj_t *lb = label(card, ITEMS[i].name, ITEMS[i].font, C_TEXT, 0, 0);
-        lv_obj_align(lb, LV_ALIGN_BOTTOM_MID, 0, -5);
+        // 文字列：flex 纵向，标题 + 描述整体在卡片中线居中
+        lv_obj_t *txt = lv_obj_create(card);
+        lv_obj_remove_flag(txt, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_style_radius(txt, 0, 0);
+        lv_obj_set_style_border_width(txt, 0, 0);
+        lv_obj_set_style_bg_opa(txt, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_pad_all(txt, 0, 0);
+        lv_obj_set_style_pad_row(txt, 3, 0);
+        lv_obj_set_size(txt, LIST_W - 46, LV_SIZE_CONTENT);
+        lv_obj_set_flex_flow(txt, LV_FLEX_FLOW_COLUMN);
+        lv_obj_align(txt, LV_ALIGN_LEFT_MID, 42, 0);
+        lv_obj_t *lb = label(txt, ITEMS[i].name, &font_fusion12, C_TEXT, 0, 0);
+        lv_obj_t *ds = label(txt, ITEMS[i].desc, &font_fusion12, C_MUTED, 0, 0);
         s_cards[i] = card;
         s_labels[i] = lb;
+        s_descs[i] = ds;
     }
     refresh_sel();
 
@@ -376,20 +481,22 @@ static void home_key(bsp_btn_t btn, bsp_btn_ev_t ev)
         page_open(PAGE_SYNC);
         return;
     }
-    if (btn == BSP_BTN_DOWN && ev == BSP_BTN_LONG) {        // 首页长按 ▼：进口袋上新
-        sfx_play(SFX_OK);
-        page_open(PAGE_LAB);
-        return;
-    }
     if (btn == BSP_BTN_OK && ev == BSP_BTN_LONG) {          // 首页长按确认：换一只猹
         if (s_av) lv_image_set_src(s_av, cha_reroll_72());
         sfx_play(SFX_POP);
         return;
     }
     if (ev != BSP_BTN_CLICK) return;
-    if (btn == BSP_BTN_UP)   { s_sel = (s_sel + 5) % 6; sfx_play(SFX_NAV); }
-    if (btn == BSP_BTN_DOWN) { s_sel = (s_sel + 1) % 6; sfx_play(SFX_NAV); }
-    if (btn == BSP_BTN_OK) { sfx_play(SFX_OK); page_intro_set(s_sel + PAGE_APP_BASE); page_open(PAGE_INTRO); return; }
+    if (btn == BSP_BTN_UP)   { s_sel = (s_sel + NITEMS - 1) % NITEMS; sfx_play(SFX_NAV); }
+    if (btn == BSP_BTN_DOWN) { s_sel = (s_sel + 1) % NITEMS;         sfx_play(SFX_NAV); }
+    if (btn == BSP_BTN_OK) {
+        sfx_play(SFX_OK);
+        switch (ITEMS[s_sel].act) {
+        case ACT_GUIDE: page_open(PAGE_GUIDE); return;
+        case ACT_LAB:   page_open(PAGE_LAB);   return;
+        case ACT_APP:   page_intro_set(ITEMS[s_sel].app_idx + PAGE_APP_BASE); page_open(PAGE_INTRO); return;
+        }
+    }
     refresh_sel();
 }
 
