@@ -23,29 +23,42 @@ LV_IMAGE_DECLARE(ic_tiles);
 
 // ---- 布局常量（屏幕像素）：身份区为 RPG 角色卡风格 ----
 #define AV_X      12    // 头像左列，72px 宽
-#define AV_Y      30
+#define AV_Y      AV_X
 #define BADGE_H   15
 
-// 右侧信息区（头像右边）：名称 + badge + RPG 状态
+// 右侧信息区（头像右边）：标题 + 名称 + badge
+// WATCHA 作为 RPG 角色的「属地名」贴在名称正上方；名称+badge 整体下移，与头像高度对齐
 #define INFO_X    96              // 右侧区左边界
-#define NAME_Y    28
-#define BADGE_IY  (NAME_Y + 28)   // badge 在名称下方
+#define TITLE_Y   (AV_Y + 5)              // 标题（属地名）贴在名称上方
+#define NAME_Y    (TITLE_Y + 10)              // 名称下移，使名称+badge 与头像垂直居中对齐
+#define BADGE_IY  (NAME_Y + 29)   // badge 在名称下方
 #define ICON_CELL 1               // 点阵图标每点像素（11×11 → 11px 见方）
 #define ICON_W    (11 * ICON_CELL)
-#define ROW1_Y    78              // HP 行
-#define ROW2_Y    98              // ATK / DEF 行
-#define ROW3_Y    116             // Coins 行
-#define HP_BAR_X  (INFO_X + 20)   // HP 血条起点
-#define HP_BAR_W  70              // HP 血条满宽
-#define HP_BAR_H  10
-#define COL2_X    (INFO_X + 72)   // ATK/DEF 第二列（DEF）x
+
+// RPG 状态区：与头像同缩进（左对齐 AV_X），头像下方三行（HP / ATK+DEF / Coins）。
+// 全部相对定位：行距 SROW_DY，图标宽 ICON_W，数值离图标 STAT_GAP，第二列再偏 STAT_COL2。
+#define STAT_X     AV_X                         // 与头像/表情包同缩进
+#define STAT_GAP   5                            // 图标与数值的水平间距
+#define STAT_COL2  80                           // ATK→DEF 的列间距
+#define SROW_DY    19                           // 三行的行距
+#define SROW1_Y    (AV_Y + 66)                  // 第一行 HP
+#define SROW2_Y    (SROW1_Y + SROW_DY)          // 第二行 ATK / DEF
+#define SROW3_Y    (SROW2_Y + SROW_DY)          // 第三行 Coins
+#define STAT_DIV_Y (SROW3_Y + 16)               // 状态区下方分隔线
+
+#define HP_BAR_X   (STAT_X + ICON_W + 6)        // HP 血条起点（心形图标之后）
+#define HP_BAR_W   130                          // HP 血条满宽（拉到正常宽度）
+#define HP_BAR_H   13
+#define ATK_X      STAT_X                       // ATK 列
+#define DEF_X      (STAT_X + STAT_COL2)         // DEF 列
+#define COIN_X     STAT_X                       // Coins 列（独立一行，回到首列）
 
 #define GRID_X    18
-#define GRID_Y    146
+#define GRID_Y    (STAT_DIV_Y + 6)
 #define CARD_W    60
 #define CARD_H    52
 #define CARD_GX   72
-#define CARD_GY   62
+#define CARD_GY   60
 
 static lv_obj_t *s_scr;
 static lv_obj_t *s_av;
@@ -117,10 +130,10 @@ static lv_obj_t *icon_make(lv_obj_t *parent, const char *const rows[11], int cel
 }
 
 // 四维图标点阵（11×11）
-static const char *const ICON_HP[11] = {    // 爱心
-    ".###.###...", ".#######.#.", ".#######...", ".#######...",
-    "..#####....", "...###.....", "....#......", "...........",
-    "...........", "...........", "...........",
+static const char *const ICON_HP[11] = {    // 爱心（左右对称，顶部圆润、底部收尖）
+    "..###.###..", ".#########.", "###########", "###########",
+    "###########", ".#########.", "..#######..", "...#####...",
+    "...#####...", "....###....", ".....#.....",
 };
 static const char *const ICON_ATK[11] = {   // 剑
     ".........##", "........###", ".......###.", "......###..",
@@ -260,14 +273,13 @@ static void home_enter(void)
     lv_obj_set_style_pad_all(s_scr, 0, 0);
     lv_obj_set_style_border_width(s_scr, 0, 0);
 
-    // 顶栏（电量已移入身份区 HP）
-    label(s_scr, "WATCHA", &font_ps8, C_GREEN, 18, 9);
-    block(s_scr, 0, 26, 240, 1, C_LINE);
-
     // 头像
     s_av = lv_image_create(s_scr);
     lv_image_set_src(s_av, cha_random_72());
     lv_obj_set_pos(s_av, AV_X, AV_Y);
+
+    // 标题（原顶栏文字，移到名称上方）
+    label(s_scr, "WATCHA", &font_ps8, C_GREEN, INFO_X, TITLE_Y);
 
     // 角色名（24px 左对齐，超宽省略）
     s_name = label(s_scr, "", &font_fusion24, C_TEXT, INFO_X, NAME_Y);
@@ -279,23 +291,24 @@ static void home_enter(void)
     lv_obj_set_style_border_width(s_badge, 1, 0);
     s_badge_t = label(s_badge, "", &font_fusion12, C_MUTED, 0, 0);
 
-    // 第一行 HP：爱心图标 + 血条（绿/黄/红）+ 百分比
-    lv_obj_set_pos(icon_make(s_scr, ICON_HP, ICON_CELL, 0xE05050), INFO_X, ROW1_Y + 2);
-    block(s_scr, HP_BAR_X, ROW1_Y + 2, HP_BAR_W, HP_BAR_H, C_LINE);   // 血条底槽
-    s_hp_bar = block(s_scr, HP_BAR_X, ROW1_Y + 2, HP_BAR_W, HP_BAR_H, C_GREEN);
-    s_hp = label(s_scr, "--", &font_ps8, C_GREEN, HP_BAR_X + HP_BAR_W + 6, ROW1_Y + 3);
+    // 第一行 HP：爱心图标 + 血条（绿/黄/红，正常宽度）+ 百分比（16px，与其它 stats 统一）
+    // 图标 11px / 血条 14px / 数值 16px，各自在行内垂直居中对齐
+    lv_obj_set_pos(icon_make(s_scr, ICON_HP, ICON_CELL, 0xE05050), STAT_X, SROW1_Y + 3);
+    block(s_scr, HP_BAR_X, SROW1_Y + 1, HP_BAR_W, HP_BAR_H, C_LINE);   // 血条底槽
+    s_hp_bar = block(s_scr, HP_BAR_X, SROW1_Y + 1, HP_BAR_W, HP_BAR_H, C_GREEN);
+    s_hp = label(s_scr, "--", &font_ps16, C_GREEN, HP_BAR_X + HP_BAR_W + 6, SROW1_Y);
 
     // 第二行 ATK / DEF：各自图标 + 原始数值（不换算）
-    lv_obj_set_pos(icon_make(s_scr, ICON_ATK, ICON_CELL, C_GREEN), INFO_X, ROW2_Y + 3);
-    s_atk = label(s_scr, "--", &font_ps16, C_TEXT, INFO_X + ICON_W + 5, ROW2_Y);
-    lv_obj_set_pos(icon_make(s_scr, ICON_DEF, ICON_CELL, C_GREEN), COL2_X, ROW2_Y + 3);
-    s_def = label(s_scr, "--", &font_ps16, C_TEXT, COL2_X + ICON_W + 5, ROW2_Y);
+    lv_obj_set_pos(icon_make(s_scr, ICON_ATK, ICON_CELL, C_GREEN), ATK_X, SROW2_Y + 3);
+    s_atk = label(s_scr, "--", &font_ps16, C_TEXT, ATK_X + ICON_W + STAT_GAP, SROW2_Y);
+    lv_obj_set_pos(icon_make(s_scr, ICON_DEF, ICON_CELL, C_GREEN), DEF_X, SROW2_Y + 3);
+    s_def = label(s_scr, "--", &font_ps16, C_TEXT, DEF_X + ICON_W + STAT_GAP, SROW2_Y);
 
-    // 第三行 Coins：金币图标 + 原始数值（不换算）
-    lv_obj_set_pos(icon_make(s_scr, ICON_COIN, ICON_CELL, C_GOLD), INFO_X, ROW3_Y + 3);
-    s_coins = label(s_scr, "--", &font_ps16, C_GOLD, INFO_X + ICON_W + 5, ROW3_Y);
+    // 第三行 Coins：金币图标 + 原始数值（独立一行）
+    lv_obj_set_pos(icon_make(s_scr, ICON_COIN, ICON_CELL, C_GOLD), COIN_X, SROW3_Y + 3);
+    s_coins = label(s_scr, "--", &font_ps16, C_GOLD, COIN_X + ICON_W + STAT_GAP, SROW3_Y);
 
-    block(s_scr, 0, 134, 240, 1, C_LINE);
+    block(s_scr, 0, STAT_DIV_Y, 240, 1, C_LINE);
     ble_sync_take_updated();   // 进页即读最新，旧标志作废
     apply_profile();
 
