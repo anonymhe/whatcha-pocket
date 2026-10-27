@@ -12,16 +12,22 @@ Unlike the upstream baseline, this firmware does **not** rely on Montserrat or o
 
 | Font | Declared in | Covers | Use for |
 | --- | --- | --- | --- |
-| `font_fusion12` | `main/*.c` via `LV_FONT_DECLARE` (e.g. [`main/pages.c`](../../../main/pages.c)) | ~6,800 common Chinese characters plus ASCII, 12 px pixel style | All Chinese UI text |
-| `font_fusion24` | [`main/page_type.c`](../../../main/page_type.c), [`main/page_fortune.c`](../../../main/page_fortune.c) | A ~650-character subset of `font_fusion12`, 24 px pixel style | Result/headline text only, and only characters inside the subset |
-| `font_fusion16` | On disk but not compiled (removed from the build as dead Flash) | The same ~650-character subset, 16 px | None; `font_fusion16.c` is kept for reference. Re-add it to `main/CMakeLists.txt` only if a page starts using it |
+| `font_fusion12` | `main/*.c` via `LV_FONT_DECLARE` (e.g. [`main/pages.c`](../../../main/pages.c)) | Full GB2312 (~7,300 Chinese characters plus the symbols and nickname variants the UI needs) plus ASCII, 12 px pixel style | All Chinese UI body text |
+| `font_fusion20` | [`main/page_home.c`](../../../main/page_home.c), [`main/page_fortune.c`](../../../main/page_fortune.c), [`main/page_type.c`](../../../main/page_type.c), [`main/page_guide.c`](../../../main/page_guide.c) | A ~690-character headline subset, 20 px pixel style (an exact 2× of the 10 px artwork) | Headline/name/result text only, and only characters inside the subset |
+| `font_fusion10` | On disk but not compiled (kept as source to save Flash) | Full GB2312 plus ASCII, 10 px | None today; re-add it to `main/CMakeLists.txt` only if a page needs a smaller body size |
 | `font_ps8` / `font_ps16` | `main/apps/app_ui.h` | ASCII only (digits, Latin), 8/16 px pixel style | Scores, timers, numeric readouts |
 
-All three `font_fusion*` fonts are generated from the same `fusion12.ttf`; `font_fusion16` and `font_fusion24` deliberately carry only a small symbol subset to save Flash. The exact subset of each is recorded in the `Opts:` header comment of its `main/font_fusion*.c` file, and `check_glyphs.py` reads those headers directly. The covered character set for `font_fusion12` is also listed, as a readable inventory, in [`docs/watcha/fusion12_chars.txt`](../../watcha/fusion12_chars.txt). `CONFIG_LV_FONT_UNSCII_8` and `CONFIG_LV_FONT_UNSCII_16` are enabled in [`sdkconfig.defaults`](../../../sdkconfig.defaults) as ASCII pixel fallbacks; the Montserrat defaults carry no CJK glyphs and are not the display font here.
+The `font_fusion*` fonts are rebuilt by [`tools/gen_fonts.py`](../../../tools/gen_fonts.py) from the Fusion Pixel TTFs in [`assets/font/`](../../../assets/font/): `font_fusion12` from the 12 px face, and `font_fusion10` / `font_fusion20` from the 10 px face (the 20 px headline is the 10 px artwork rendered at exactly 2×, so it stays crisp). The headline carries only a small subset to save Flash. The body coverage of `font_fusion12` is listed, as a readable inventory, in [`docs/watcha/fusion12_chars.txt`](../../watcha/fusion12_chars.txt); the headline subset is listed in [`docs/watcha/fusion20_chars.txt`](../../watcha/fusion20_chars.txt). `CONFIG_LV_FONT_UNSCII_8` and `CONFIG_LV_FONT_UNSCII_16` are enabled in [`sdkconfig.defaults`](../../../sdkconfig.defaults) as ASCII pixel fallbacks; the Montserrat defaults carry no CJK glyphs and are not the display font here.
 
-Because `font_fusion24` covers only a subset, a character can exist in `font_fusion12` yet still box out when drawn at 24 px. Any text rendered with `font_fusion24` (today, the result name/quote table in `page_type.c` and the headline in `page_fortune.c`) must stay inside that subset. The glyph gate below enforces this per file.
+Because `font_fusion20` covers only a subset, a character can exist in `font_fusion12` yet still box out when drawn at 20 px. Any text rendered with `font_fusion20` (headlines, the result table in `page_type.c`, the fortune headline and rank labels in `page_fortune.c`, and the synced nickname on the home screen) must stay inside that subset. The glyph gate below enforces this per font, per line.
 
-A character outside `font_fusion12` renders as a missing-glyph box on the device. Changing a source file's encoding does not add a glyph the font never contained; neither does enlarging the LVGL memory pool.
+A character outside the selected font renders as a missing-glyph box on the device. Changing a source file's encoding does not add a glyph the font never contained; neither does enlarging the LVGL memory pool.
+
+### 1.1 Headline glyphs the 10 px face lacks (custom pixel glyphs)
+
+A few headline characters — most importantly the mascot name **猹** — exist in the 12 px face but **not** the 10 px face the headline is built from. They cannot be rendered crisply at 20 px: the 10 px grid has no such glyph, and borrowing the 12 px glyph means scaling a 12 px design to 20 px (a non-integer 1.67×), which smears the strokes into thin, broken lines.
+
+For these, `gen_fonts.py` splices a **hand-authored 10 px pixel glyph** into the generated `font_fusion20.c`, doubled to a clean 20 px (exact 2×, matching every other headline glyph). The designs live in the `HEADLINE_CUSTOM` map in [`tools/gen_fonts.py`](../../../tools/gen_fonts.py) as `#`/`.` art on a 10×10 grid; `patch_custom_glyphs()` replaces the glyph's bitmap and descriptor after `lv_font_conv` runs and re-flows every following `bitmap_index` so the font stays self-consistent. To add or edit one, draw the 10 px grid in `HEADLINE_CUSTOM` and rerun `gen_fonts.py`; the glyph must already be present in the font (from the 12 px fallback) so there is a slot to overwrite. Note that lv_font_conv emits bytes at minimal width (`0x0`, `0xf`, `0xff`), so any tool that reparses the bitmap array must match `0x[0-9a-fA-F]+`, not a fixed two-digit pattern.
 
 ## 2. Keep encoding, coverage, and style selection separate
 
@@ -49,10 +55,10 @@ For ordinary app work you do not add or generate a font. You:
    python3 tools/check_glyphs.py main/xxx.c # scans one file
    ```
 
-   It reports each string literal character the font does not cover, with the file and line. The checker is font-aware: it validates each file against the *smallest* `font_fusion*` the file references, so a literal in a `font_fusion24` file (such as the result table in `page_type.c`) is checked against the 24 px subset, not the full 12 px set. Known gaps to substitute by hand: `…` (use `...`) and `◀`.
+   It reports each string literal character the font does not cover, with the file and line. The checker is font-aware **per line**: if a line names a specific `font_fusion*`, its literals are validated against that font; otherwise they fall back to the smallest `font_fusion*` the file references. This matters because the headline `font_fusion20` is a small subset — a line drawing text with `font_fusion20` is checked against the 20 px subset even in a file that also uses `font_fusion12`. Known gaps to substitute by hand: `…` (use `...`) and `◀`.
 3. Keep dynamic content (names, network text) inside the covered set, or show a deliberate replacement for anything outside it. A fixed menu subset does not guarantee arbitrary user or server text; do not silently drop unknown characters.
 
-`check_glyphs.py` inspects C string literals; it validates each file against the smallest font it uses, but it cannot follow text passed through variables (for example, table data read at runtime), nor does it prove on-device rendering or check layout. Treat a clean run as a necessary, not a sufficient, condition.
+`check_glyphs.py` inspects C string literals; it matches each literal to the font named on its line (or the file's smallest font), but it cannot follow text passed through variables (for example, table data read at runtime), nor does it prove on-device rendering or check layout. Treat a clean run as a necessary, not a sufficient, condition.
 
 ## 4. Selecting a font on a widget
 
@@ -101,22 +107,21 @@ For an existing label, read `lv_obj_get_style_text_font(label, LV_PART_MAIN)` un
 
 ## 7. Last resort: adding or regenerating a font
 
-Only for a maintainer deliberately extending the shipped fonts (for example, adding characters to `font_fusion12`) — not for app development, which must stay inside existing coverage. Prepare a licensed TTF/OTF that actually contains the glyphs, install a pinned [`lv_font_conv`](https://github.com/lvgl/lv_font_conv), and record its version and command. Generate a subset, never a whole family, for the sizes in use:
+Only for a maintainer deliberately extending the shipped fonts (for example, adding characters to the body or headline set) — not for app development, which must stay inside existing coverage. All three fonts are rebuilt by one reproducible script, [`tools/gen_fonts.py`](../../../tools/gen_fonts.py), which drives a pinned [`lv_font_conv`](https://github.com/lvgl/lv_font_conv) (via `npx`) against the Fusion Pixel TTFs in [`assets/font/`](../../../assets/font/). Do not hand-run `lv_font_conv` for the shipped fonts; edit the inputs and rerun the script so every font and its coverage table stay consistent:
 
 ```bash
-lv_font_conv \
-  --font /path/to/licensed-cjk-font.otf \
-  --range 0x20-0x7E,0x4E2D,0x6587,0xFF0C,0x3002 \
-  --size 12 --bpp 1 --format lvgl --no-compress \
-  --lv-font-name font_fusion12 --lv-include lvgl.h \
-  --output main/font_fusion12.c
+python3 tools/gen_fonts.py   # rebuilds font_fusion10/12/20 and fusion12_chars.txt
 ```
 
-An absent glyph in the source font cannot be created by requesting its code point. Regenerate `docs/watcha/fusion12_chars.txt` to match the new coverage so `check_glyphs.py` stays accurate, keep the character inventory and command under version control, and avoid enabling extra sizes or a full CJK family to fix one missing character. If you change which characters `font_fusion12` covers, regenerate `font_fusion16` / `font_fusion24` from the same TTF at their sizes too, so the subsets stay consistent. Match the output to the LVGL version pinned in `dependencies.lock`; start uncompressed to avoid a decoder mismatch. See the [LVGL 9.5 font overview](https://docs.lvgl.io/9.5/main-modules/fonts/overview.html).
+- **Body text (`font_fusion12`)** covers all of GB2312 plus `EXTRA_SYMBOLS` (symbols and nickname variants outside GB2312). To add a character, add it to `EXTRA_SYMBOLS` in the script; it must exist in the 12 px face.
+- **Headline (`font_fusion20`)** covers the list in [`docs/watcha/fusion20_chars.txt`](../../watcha/fusion20_chars.txt). To add a headline character, add it to that file. If the 10 px face has it, it renders crisply at 2×; if only the 12 px face has it, the script pulls it as a fallback (scaled, slightly soft). For a brand-critical character that must be crisp (e.g. 猹), add a hand-drawn 10 px design to `HEADLINE_CUSTOM` instead — see [§1.1](#11-headline-glyphs-the-10-px-face-lacks-custom-pixel-glyphs).
+- An absent glyph in the source face cannot be created by requesting its code point; the script drops uncovered characters so the output has no blank glyphs.
+
+The script regenerates `docs/watcha/fusion12_chars.txt` automatically so `check_glyphs.py` stays accurate. Keep the TTFs, the character lists, and any `HEADLINE_CUSTOM` art under version control. Output matches the LVGL version pinned in `dependencies.lock` and is uncompressed to avoid a decoder mismatch. See the [LVGL 9.5 font overview](https://docs.lvgl.io/9.5/main-modules/fonts/overview.html).
 
 ### Source font and license
 
-The `fusion12.ttf` these fonts are generated from is [Fusion Pixel Font](https://github.com/TakWolf/fusion-pixel-font) by TakWolf, a pan-CJK pixel font released under [SIL Open Font License 1.1](https://openfontlicense.org/) (`OFL-1.1`). The project ships native pixel designs at 8/10/12 px; 12 px is a native size, so `font_fusion12` renders crisply, while `font_fusion16` / `font_fusion24` are scaled from that artwork (24 px benefits from being a clean 2× of 12 px; 16 px is not an integer multiple and is softer). OFL-1.1 permits embedding the generated bitmaps in this firmware; keep the license notice and do not sell the font files on their own. If you regenerate from a newer upstream release, record the release version (date-based, e.g. `2026.10.25`) alongside the `lv_font_conv` command.
+The fonts are generated from [Fusion Pixel Font](https://github.com/TakWolf/fusion-pixel-font) by TakWolf, a pan-CJK pixel font released under [SIL Open Font License 1.1](https://openfontlicense.org/) (`OFL-1.1`). The project ships native pixel designs at several sizes; this firmware uses the monospaced 10 px and 12 px zh_hans and latin faces (in [`assets/font/`](../../../assets/font/)). 12 px is a native size, so `font_fusion12` renders crisply; `font_fusion20` is the native 10 px artwork rendered at exactly 2×, so it is crisp too. OFL-1.1 permits embedding the generated bitmaps in this firmware; keep the license notice and do not sell the font files on their own. If you regenerate from a newer upstream release, record the release version (date-based, e.g. `2026.10.25`) alongside the font sources.
 
 ## 8. Validate without overstating the result
 
