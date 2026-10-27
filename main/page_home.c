@@ -11,6 +11,7 @@
 LV_FONT_DECLARE(font_fusion12);
 LV_FONT_DECLARE(font_ps8);
 LV_FONT_DECLARE(font_ps16);
+LV_FONT_DECLARE(font_fusion24);
 #include "cha_pool.h"
 LV_IMAGE_DECLARE(ic_clover);
 LV_IMAGE_DECLARE(ic_tomato);
@@ -20,21 +21,24 @@ LV_IMAGE_DECLARE(ic_cha_mallet);
 LV_IMAGE_DECLARE(ic_tiles);
 
 
-// ---- 布局常量（屏幕像素，跟 mock 一一对应，调位置改这里）----
-#define C1        48      // 第一列卡片中心
-#define C23       156     // 第二三列中间
-#define AV_BODY_C 36   /* 新图在 72 宽画布里水平居中 */
-#define AV_X      (C1 - AV_BODY_C)
+// ---- 布局常量（屏幕像素）：身份区为 RPG 角色卡风格 ----
+#define AV_X      12    // 头像左列，72px 宽
 #define AV_Y      30
 #define BADGE_H   15
-#define BADGE_Y   (AV_Y + 64 + 6)
 
-#define NAME_Y    50
-#define NAME_W    136     // 昵称区宽度，超出显示省略号
-#define ROW_X     (C23 - 29)
-#define ROW1_Y    78
-#define ROW2_Y    98
-#define NUM_X     (ROW_X + 34)
+// 右侧信息区（头像右边）：名称 + badge + RPG 状态
+#define INFO_X    96              // 右侧区左边界
+#define NAME_Y    28
+#define BADGE_IY  (NAME_Y + 28)   // badge 在名称下方
+#define ICON_CELL 1               // 点阵图标每点像素（11×11 → 11px 见方）
+#define ICON_W    (11 * ICON_CELL)
+#define ROW1_Y    78              // HP 行
+#define ROW2_Y    98              // ATK / DEF 行
+#define ROW3_Y    116             // Coins 行
+#define HP_BAR_X  (INFO_X + 20)   // HP 血条起点
+#define HP_BAR_W  70              // HP 血条满宽
+#define HP_BAR_H  10
+#define COL2_X    (INFO_X + 72)   // ATK/DEF 第二列（DEF）x
 
 #define GRID_X    18
 #define GRID_Y    146
@@ -44,11 +48,10 @@ LV_IMAGE_DECLARE(ic_tiles);
 #define CARD_GY   62
 
 static lv_obj_t *s_scr;
-static lv_obj_t *s_batt;
 static lv_obj_t *s_av;
 static lv_obj_t *s_badge, *s_badge_t;
 static lv_obj_t *s_name;
-static lv_obj_t *s_row1_t, *s_row2_t, *s_num1, *s_num2;
+static lv_obj_t *s_hp, *s_hp_bar, *s_atk, *s_def, *s_coins;   // RPG 数值
 static lv_obj_t *s_cards[6];
 static lv_obj_t *s_labels[6];
 static lv_obj_t *s_icons[6];
@@ -88,12 +91,52 @@ static lv_obj_t *label(lv_obj_t *p, const char *t, const lv_font_t *f, uint32_t 
     return l;
 }
 
-static void fmt_count(char *buf, size_t n, uint32_t v)
+// 运行时点阵图标：11 行字符串，'#' 亮，其它为空；每个亮点画 cell×cell 像素方块。
+// 同一行连续亮点合并成一条横向方块，省 LVGL 对象。返回 11*cell 见方的容器。
+static lv_obj_t *icon_make(lv_obj_t *parent, const char *const rows[11], int cell, uint32_t col)
 {
-    if (v < 1000)       snprintf(buf, n, "%lu", (unsigned long)v);
-    else if (v < 10000) snprintf(buf, n, "%lu.%luk", (unsigned long)(v / 1000), (unsigned long)(v % 1000 / 100));
-    else                snprintf(buf, n, "%luk", (unsigned long)(v / 1000));
+    lv_obj_t *box = lv_obj_create(parent);
+    lv_obj_remove_flag(box, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(box, 11 * cell, 11 * cell);
+    lv_obj_set_style_radius(box, 0, 0);
+    lv_obj_set_style_border_width(box, 0, 0);
+    lv_obj_set_style_pad_all(box, 0, 0);
+    lv_obj_set_style_bg_opa(box, LV_OPA_TRANSP, 0);
+    for (int r = 0; r < 11; r++) {
+        const char *row = rows[r];
+        int c = 0;
+        while (c < 11) {
+            if (row[c] != '#') { c++; continue; }
+            int run = 1;
+            while (c + run < 11 && row[c + run] == '#') run++;
+            block(box, c * cell, r * cell, run * cell, cell, col);
+            c += run;
+        }
+    }
+    return box;
 }
+
+// 四维图标点阵（11×11）
+static const char *const ICON_HP[11] = {    // 爱心
+    ".###.###...", ".#######.#.", ".#######...", ".#######...",
+    "..#####....", "...###.....", "....#......", "...........",
+    "...........", "...........", "...........",
+};
+static const char *const ICON_ATK[11] = {   // 剑
+    ".........##", "........###", ".......###.", "......###..",
+    ".....###...", "....###....", "...###.....", ".#.##......",
+    "###.#......", ".###.......", "##.........",
+};
+static const char *const ICON_DEF[11] = {   // 盾
+    "..#######..", ".#########.", ".#########.", ".####.####.",
+    ".#########.", "..#######..", "..#######..", "...#####...",
+    "....###....", ".....#.....", "...........",
+};
+static const char *const ICON_COIN[11] = {  // 金币
+    "...#####...", ".##.....##.", ".#..###..#.", "##..#.#..##",
+    "##..#.#..##", "##..#.#..##", "##..###..##", ".#.......#.",
+    ".##.....##.", "...#####...", "...........",
+};
 
 static bool is_ascii(const char *s)
 {
@@ -132,49 +175,47 @@ static void apply_profile(void)
     profile_t p;
     profile_load(&p);
 
-    // 身份标签：普通用户灰 USER / 观猹员绿 / 金牌观猹员金
+    // 身份标签（RPG 风格）：普通 用户 - Spectator / 观猹员 - Player / 金牌 观猹员 - Player No.1
     uint32_t col = C_MUTED;
-    const char *tag = "USER";
-    const lv_font_t *tf = &font_ps8;
-    if (p.valid && p.tier == TIER_MEMBER) { col = C_GREEN; tag = "观猹员";     tf = &font_fusion12; }
-    if (p.valid && p.tier == TIER_GOLD)   { col = C_GOLD;  tag = "金牌观猹员"; tf = &font_fusion12; }
+    const char *tag = "用户 - Spectator";
+    if (p.valid && p.tier == TIER_MEMBER) { col = C_GREEN; tag = "观猹员 - Player"; }
+    if (p.valid && p.tier == TIER_GOLD)   { col = C_GOLD;  tag = "观猹员 - Player No.1"; }
     lv_label_set_text(s_badge_t, tag);
-    lv_obj_set_style_text_font(s_badge_t, tf, 0);
     lv_obj_set_style_text_color(s_badge_t, lv_color_hex(col), 0);
     lv_obj_update_layout(s_badge_t);
     int bw = lv_obj_get_width(s_badge_t) + 10;
     lv_obj_set_size(s_badge, bw, BADGE_H);
-    lv_obj_set_pos(s_badge, C1 - bw / 2, BADGE_Y);
+    lv_obj_set_pos(s_badge, INFO_X, BADGE_IY);
     lv_obj_set_style_border_color(s_badge, lv_color_hex(col), 0);
     lv_obj_center(s_badge_t);
 
-    // 昵称：纯英文短名用 ps16，长英文用 ps8，含中文用 fusion12
-    uint32_t hi = (p.valid && p.tier == TIER_GOLD) ? C_GOLD : C_GREEN;
+    // 角色名：24px 左对齐，超宽省略
     if (!p.valid || !p.nick[0]) {
         lv_label_set_text(s_name, "未同步");
-        lv_obj_set_style_text_font(s_name, &font_fusion12, 0);
         lv_obj_set_style_text_color(s_name, lv_color_hex(C_MUTED), 0);
     } else {
         char nick[sizeof p.nick];
         memcpy(nick, p.nick, sizeof nick);
         nick[sizeof nick - 1] = 0;
-        if (!is_ascii(nick)) strip_missing(nick, &font_fusion12);
+        if (!is_ascii(nick)) strip_missing(nick, &font_fusion24);
         if (!nick[0]) strcpy(nick, "--");                 // 全是 emoji 之类：去完就空了
-        const lv_font_t *nf = &font_fusion12;
-        if (is_ascii(nick)) nf = strlen(nick) <= 8 ? &font_ps16 : &font_ps8;
         lv_label_set_text(s_name, nick);
-        lv_obj_set_style_text_font(s_name, nf, 0);
         lv_obj_set_style_text_color(s_name, lv_color_hex(p.tier == TIER_GOLD ? C_GOLD : C_TEXT), 0);
     }
 
-    // 发言 = 猹评 + 猹馆；获赞
-    char b1[16], b2[16];
-    if (p.valid) { fmt_count(b1, sizeof b1, p.reviews + p.posts); fmt_count(b2, sizeof b2, p.upvotes); }
-    else         { strcpy(b1, "--"); strcpy(b2, "--"); }
-    lv_label_set_text(s_num1, b1);
-    lv_label_set_text(s_num2, b2);
-    lv_obj_set_style_text_color(s_num1, lv_color_hex(hi), 0);
-    lv_obj_set_style_text_color(s_num2, lv_color_hex(hi), 0);
+    // RPG 数值：ATK=评价(reviews) / DEF=发帖(posts) / Coins=获赞(upvotes)，均原始数不换算；HP 由 tick 刷新
+    char a[16], d[16], co[16];
+    if (p.valid) {
+        snprintf(a,  sizeof a,  "%lu", (unsigned long)p.reviews);
+        snprintf(d,  sizeof d,  "%lu", (unsigned long)p.posts);
+        snprintf(co, sizeof co, "%lu", (unsigned long)p.upvotes);
+    } else { strcpy(a, "--"); strcpy(d, "--"); strcpy(co, "--"); }
+    lv_label_set_text(s_atk, a);
+    lv_label_set_text(s_def, d);
+    lv_label_set_text(s_coins, co);
+    uint32_t sc = (p.valid && p.tier == TIER_GOLD) ? C_GOLD : C_TEXT;
+    lv_obj_set_style_text_color(s_atk, lv_color_hex(sc), 0);
+    lv_obj_set_style_text_color(s_def, lv_color_hex(sc), 0);
 }
 
 static void refresh_sel(void)
@@ -196,7 +237,13 @@ static void tick(lv_timer_t *t)
     char buf[16];
     if (soc < 0) snprintf(buf, sizeof buf, "--%%");
     else         snprintf(buf, sizeof buf, "%d%%", soc);
-    lv_label_set_text(s_batt, buf);
+    lv_label_set_text(s_hp, buf);
+    // HP 血条：按电量宽度 + 绿/黄/红三色（>=50 绿，>=20 黄，否则红）
+    int pct = soc < 0 ? 0 : soc;
+    uint32_t hc = pct >= 50 ? C_GREEN : pct >= 20 ? 0xE6B93C : 0xE05050;
+    lv_obj_set_width(s_hp_bar, HP_BAR_W * pct / 100);
+    lv_obj_set_style_bg_color(s_hp_bar, lv_color_hex(hc), 0);
+    lv_obj_set_style_text_color(s_hp, lv_color_hex(hc), 0);
 }
 
 static void sync_tick(lv_timer_t *t)
@@ -213,29 +260,41 @@ static void home_enter(void)
     lv_obj_set_style_pad_all(s_scr, 0, 0);
     lv_obj_set_style_border_width(s_scr, 0, 0);
 
-    // 顶栏
+    // 顶栏（电量已移入身份区 HP）
     label(s_scr, "WATCHA", &font_ps8, C_GREEN, 18, 9);
-    block(s_scr, 188, 11, 4, 4, C_GREEN);
-    s_batt = label(s_scr, "--%", &font_ps8, C_MUTED, 198, 9);
     block(s_scr, 0, 26, 240, 1, C_LINE);
 
-    // 头像 + 身份标签
+    // 头像
     s_av = lv_image_create(s_scr);
     lv_image_set_src(s_av, cha_random_72());
     lv_obj_set_pos(s_av, AV_X, AV_Y);
-    s_badge = block(s_scr, C1 - 24, BADGE_Y, 48, BADGE_H, C_BG);
+
+    // 角色名（24px 左对齐，超宽省略）
+    s_name = label(s_scr, "", &font_fusion24, C_TEXT, INFO_X, NAME_Y);
+    lv_obj_set_width(s_name, 240 - INFO_X - 6);
+    lv_label_set_long_mode(s_name, LV_LABEL_LONG_DOT);
+
+    // 身份 badge（RPG 文案，中英混排）
+    s_badge = block(s_scr, INFO_X, BADGE_IY, 48, BADGE_H, C_BG);
     lv_obj_set_style_border_width(s_badge, 1, 0);
     s_badge_t = label(s_badge, "", &font_fusion12, C_MUTED, 0, 0);
 
-    // 昵称 + 数据
-    s_name = label(s_scr, "", &font_ps16, C_TEXT, C23 - NAME_W / 2, NAME_Y);
-    lv_obj_set_width(s_name, NAME_W);
-    lv_obj_set_style_text_align(s_name, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(s_name, LV_LABEL_LONG_DOT);
-    s_row1_t = label(s_scr, "发言", &font_fusion12, C_MUTED, ROW_X, ROW1_Y);
-    s_num1   = label(s_scr, "--",   &font_ps8,      C_GREEN, NUM_X, ROW1_Y + 3);
-    s_row2_t = label(s_scr, "获赞", &font_fusion12, C_MUTED, ROW_X, ROW2_Y);
-    s_num2   = label(s_scr, "--",   &font_ps8,      C_GREEN, NUM_X, ROW2_Y + 3);
+    // 第一行 HP：爱心图标 + 血条（绿/黄/红）+ 百分比
+    lv_obj_set_pos(icon_make(s_scr, ICON_HP, ICON_CELL, 0xE05050), INFO_X, ROW1_Y + 2);
+    block(s_scr, HP_BAR_X, ROW1_Y + 2, HP_BAR_W, HP_BAR_H, C_LINE);   // 血条底槽
+    s_hp_bar = block(s_scr, HP_BAR_X, ROW1_Y + 2, HP_BAR_W, HP_BAR_H, C_GREEN);
+    s_hp = label(s_scr, "--", &font_ps8, C_GREEN, HP_BAR_X + HP_BAR_W + 6, ROW1_Y + 3);
+
+    // 第二行 ATK / DEF：各自图标 + 原始数值（不换算）
+    lv_obj_set_pos(icon_make(s_scr, ICON_ATK, ICON_CELL, C_GREEN), INFO_X, ROW2_Y + 3);
+    s_atk = label(s_scr, "--", &font_ps16, C_TEXT, INFO_X + ICON_W + 5, ROW2_Y);
+    lv_obj_set_pos(icon_make(s_scr, ICON_DEF, ICON_CELL, C_GREEN), COL2_X, ROW2_Y + 3);
+    s_def = label(s_scr, "--", &font_ps16, C_TEXT, COL2_X + ICON_W + 5, ROW2_Y);
+
+    // 第三行 Coins：金币图标 + 原始数值（不换算）
+    lv_obj_set_pos(icon_make(s_scr, ICON_COIN, ICON_CELL, C_GOLD), INFO_X, ROW3_Y + 3);
+    s_coins = label(s_scr, "--", &font_ps16, C_GOLD, INFO_X + ICON_W + 5, ROW3_Y);
+
     block(s_scr, 0, 134, 240, 1, C_LINE);
     ble_sync_take_updated();   // 进页即读最新，旧标志作废
     apply_profile();
