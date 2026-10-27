@@ -11,7 +11,7 @@
 文档适用范围：
 
 - 适用对象：本仓库实现的 ESP32-C3 FoloToy AI Passport 板级映射。
-- 产品规格见 [specifications.zh_CN.md](specifications.zh_CN.md)；固件行为以 `bsp_pins.h`、BSP 实现、`sdkconfig.defaults`、`partitions.csv` 与 demo 代码为准。
+- 产品规格见 [specifications.zh_CN.md](specifications.zh_CN.md)；固件行为以 `bsp_pins.h`、BSP 实现、`sdkconfig.defaults`、`partitions.csv` 与 `main/` 应用代码为准。
 - 代码复核日期：2026-08-26。
 
 ## 1. 开始任何任务前
@@ -20,7 +20,7 @@ AI 应先完成以下检查：
 
 1. 阅读 `AGENTS.md`、本文件和将要修改的 BSP 头文件/实现；产品背景不清楚时再读 `docs/README.md`，不默认加载全部 README。
 2. 执行 `git status --short`，保留用户已有改动，不覆盖、不清理无关文件。
-3. 判断修改属于哪一层：可复用硬件能力放入 `components/bsp`；菜单、动画、业务交互和验证页面放入 `main`。
+3. 判断修改属于哪一层：可复用硬件能力放入 `components/bsp`；页面、动画和业务交互放入 `main`。
 4. 以 `bsp_pins.h` 为当前板卡引脚和面板参数的单一事实来源，不在 `.c` 文件重复写 GPIO、I2C 地址或屏幕尺寸。
 5. 硬件相关修改必须位于产品规格和 BSP 明确定义的范围内。
 
@@ -31,14 +31,12 @@ AI 应先完成以下检查：
 | 子系统 | 器件/方式 | 总线或资源 | 固件支持 |
 | --- | --- | --- | --- |
 | MCU | ESP32-C3 | 8 MB Flash、无 PSRAM | 已配置 |
-| 显示 | ST7789P3，240 × 320，RGB565 | SPI2，40 MHz，mode 0 | 驱动与验证页 |
+| 显示 | ST7789P3，240 × 320，RGB565 | SPI2，40 MHz，mode 0 | 驱动 |
 | 背光 | LCD LED 背光 | GPIO21，LEDC 5 kHz/10 bit | PWM 亮度控制 |
 | 按键 | UP/DOWN/OK 三键电阻分压 | GPIO0 / ADC1_CH0 | 事件与实时电压页 |
-| 音频 | ES8311，播放 + 麦克风录音 | I2C 控制 + I2S0 全双工 | 播放与录音页 |
+| 音频 | ES8311，播放 + 麦克风录音 | I2C 控制 + I2S0 全双工 | sfx 播放；录音走 `bsp_audio_*` |
 | 电池 | CW2017 电量计 | 共享 I2C0，地址 0x63 | 可缺省 SOC/电压驱动 |
-| Wi-Fi | ESP32-C3 2.4 GHz STA | 应用页按需初始化 | 扫描页 |
-| Bluetooth LE | ESP32-C3 NimBLE peripheral | 应用页按需初始化 | 不可连接广播页 |
-| 低功耗 | ESP32-C3 light/deep sleep | RTC timer 唤醒 | 2 秒 light sleep 和 5 秒 deep sleep 模式 |
+| Bluetooth LE | ESP32-C3 NimBLE peripheral | 由 `ble_sync.c` 持有 | 资料同步广播（GATT server） |
 | 日志 | USB Serial/JTAG | 原生 USB GPIO18/19 | 已配置 |
 
 ## 3. 引脚表与资源所有权
@@ -77,8 +75,7 @@ LCD RST 和功放 PA 使能均定义为 `-1`：LCD 复位使用软件路径，�
 | I2S0 | 音频 BSP | TX/RX 全双工，共用 MCLK/BCLK/WS。 |
 | USB Serial/JTAG | 控制台配置 | GPIO18/19 属于当前控制台路径。 |
 | 内部 RAM/DMA | 显示、LVGL、音频、无线、任务 | 无 PSRAM；总空闲堆和最大连续块都必须检查。 |
-| NVS/网络 event loop | `demo_radio.c` | 为 Wi-Fi/BLE demo 一次性准备；初始化失败时不得擦除无关 NVS 数据。 |
-| Wi-Fi/BLE 协议栈 | 各自 demo 页面 | 当前页面进入时启动、退出时释放，不同时常驻。 |
+| NimBLE host/controller | `ble_sync.c` | 资料同步协议栈整个会话常驻；空闲十分钟后暂停广播，按键即恢复。 |
 
 GPIO0 同时是按键 ADC 节点和 ESP32-C3 启动相关管脚；GPIO21 是背光输出，并与常见 UART0 TX 映射冲突。重分配引脚必须复核启动/烧录路径并完成实机验收。
 
@@ -96,19 +93,15 @@ app_main
   ├─ bsp_i2c_init → bsp_i2c_scan
   ├─ bsp_display_init → bsp_lvgl_init → backlight 100%
   ├─ bsp_button_init(on_key)
-  ├─ bsp_audio_init
   ├─ bsp_battery_init
-  └─ LVGL menu
-       ├─ Display demo
-       ├─ Button demo
-       ├─ Audio demo
-       ├─ Battery demo
-       ├─ Wi-Fi scan demo
-       ├─ Bluetooth LE advertising demo
-       └─ Low Power sleep-mode demo
+  ├─ NVS storage、crash 日志与 BLE 同步启动
+  └─ 开机动画 → pages.c 页面路由
+       ├─ 首页（身份卡 + 六宫格）
+       ├─ 说明页 → 各功能页
+       └─ 口袋上新 → main/apps/ 下的二创玩法
 ```
 
-显示是 UI 的硬依赖，显示或 LVGL 初始化失败时 `app_main` 直接返回。按键、音频、电池是软依赖：初始化失败的菜单项显示 `[FAIL]`，其他页面仍可用。
+显示是 UI 的硬依赖，显示或 LVGL 初始化失败时 `app_main` 直接返回。电池和音频是软依赖：页面各自降级（电量显示 `--%`、音效跳过）而不是让整机失败。
 
 公开 BSP API 位于 `components/bsp/include/`：
 
@@ -121,7 +114,7 @@ app_main
 
 驱动初始化大多设计为幂等，但当前没有统一 deinit API。不要假设可以在运行时反复销毁和重建总线/驱动。
 
-Wi-Fi、NimBLE 和 light/deep sleep 直接使用 ESP-IDF API，不属于板级 BSP。`demo_radio.c` 只管理 NVS、`esp_netif` 和默认 event loop 这些应用级共享前置。Wi-Fi 和 BLE 页在进入时初始化高内存占用的无线栈，退出时停止并释放；不自动抹除已有 NVS 数据来掩盖分区错误。deep sleep 会按 ESP32-C3 语义重启应用，示例用 RTC slow memory 记录唤醒次数。
+Bluetooth LE 直接使用 NimBLE 而非 BSP。`ble_sync.c` 整个会话持有协议栈，不做反初始化；省电只是空闲十分钟后暂停广播并给音频 codec 下电。
 
 ## 5. 显示与 LVGL
 
@@ -209,9 +202,9 @@ MCU 是 I2S master，ES8311 是 slave；I2S0 的 TX/RX 全双工通道共享 MCL
 - `bsp_audio_read/write` 是阻塞调用，不能放在按键回调或 LVGL 任务中。
 - I2S DMA 当前为 6 个 descriptor、每个 240 frame。更改 DMA 或 LVGL buffer 前必须联合评估内部 RAM。
 
-Audio demo 使用独立 4 KB 栈任务：OK 播放 1 秒 1 kHz 方波，UP 录 3 秒再回放。录音缓冲约 96 KB，是当前最显著的瞬时堆分配，可能因碎片或其他功能增大而失败。新增长录音应优先采用分块流式处理或外部存储，不可假设存在 PSRAM。
+sfx 任务以独立 4 KB 栈任务流式合成音效。音频侧最显著的瞬时堆开销是 I2S DMA 与流式缓冲；新增长音频应优先采用分块流式处理或外部存储，不可假设存在 PSRAM。
 
-当前 demo 的退出会直接删除音频任务。如果任务正阻塞于 codec 读写，实际硬件上需特别验证退出行为；若扩展为生产逻辑，应设计可取消的分块循环与明确的任务退出握手。
+sfx 任务常驻，不做退出销毁。如果扩展出会阻塞于 codec 读写的生产任务，应设计可取消的分块循环与明确的任务退出握手。
 
 ## 9. CW2017 电池计
 
@@ -238,8 +231,8 @@ SOC 准确度取决于电芯与 profile 的匹配程度。本驱动给出的是�
 - LVGL 静态内存池 24 KB；
 - LCD DMA buffer 约 9.6 KB；
 - I2S DMA descriptor/frame buffer；
-- Audio demo 96 KB 录音堆；
-- Wi-Fi 驱动或 NimBLE host/controller（两个示例不同时常驻）；
+- 音频 codec 下电前的流式缓冲；
+- NimBLE host/controller；
 - 各 FreeRTOS 任务栈和最大连续空闲块。
 
 新增图片、字体、网络栈、TLS、音频缓存或双缓冲时，应记录 build 后的静态 RAM/Flash 使用，并在运行时记录 free heap 与 largest free block。总 free heap 足够不代表能成功分配大连续缓冲。
@@ -254,16 +247,16 @@ SOC 准确度取决于电芯与 profile 的匹配程度。本驱动给出的是�
 4. 初始化应尽量幂等，错误应返回 `esp_err_t` 并输出包含引脚/地址的诊断日志。
 5. 明确 API 的线程、阻塞、内存所有权、任务上下文和失败返回值。
 
-新增硬件验证页：
+新增页面：
 
-1. 创建 `main/demo_<feature>.c`，实现 `enter`、`exit`、`key`。
-2. 在 `main/demo.h` 声明，在 `main/CMakeLists.txt` 加源文件，在 `main.c` 的 `DEMOS[]` 注册。
+1. 创建 `main/page_<feature>.c`，实现 `enter`、`exit`、`key`，并导出一个 `const page_t`。
+2. 在 `main/CMakeLists.txt` 加源文件，在 `main/pages.c` 的 `PAGES[]` 注册。
 3. `enter` 创建并加载自己的 screen；`exit` 先停任务/定时器，再删 screen 和清空指针。
-4. 页面文字保持英文；说明性注释可用中文。
+4. 说明性注释可用中文。
 5. 慢操作放工作任务，结果通过 LVGL 锁更新界面。
-6. 保留 OK 长按返回这一全局交互，不在页面重复实现。
+6. 保留 OK 长按返回这一全局交互（pages.c 统一处理），不在页面重复实现。
 
-如果菜单项依赖新外设，还需扩展 `s_ok[]` 初始化与失败禁用逻辑。注意当前数组索引与 `DEMOS[]` 顺序隐式对应，修改顺序时必须同步核对。
+二创玩法不走 `PAGES[]`：在 `main/apps/` 新建 `app_<name>.c` 并在 `main/apps/apps.c` 的 `APPS[]` 加一行即可，目录内源文件自动编译。
 
 ## 12. 开发环境搭建
 
@@ -389,7 +382,7 @@ idf.py build
 | 能烧录但无日志 | 确认 USB Serial/JTAG 配置和正确端口，不要默认改用 GPIO21 UART TX |
 | 构建目录来自其他 IDF | 激活 5.5.3 后 `idf.py fullclean`，再 set-target/build |
 
-环境验收标准是：`idf.py --version` 正确、`idf.py build` 无错误、设备可烧录、monitor 能看到 `FoloToy AI Passport BSP demo 启动`，并且启动后没有持续重启或 assert。
+环境验收标准是：`idf.py --version` 正确、`idf.py build` 无错误、设备可烧录、monitor 能看到启动日志，并且启动后没有持续重启或 assert。
 
 ## 13. 构建与验证
 
@@ -422,11 +415,9 @@ idf.py flash monitor
 | 引脚/I2C | 扫描、所有共享设备、启动冲突、USB 日志 |
 | LCD 序列/旋转/颜色 | 红绿蓝白黑色块、方向、边缘裁切、负片、字节序、背光 100/50/10% |
 | ADC/按键 | 松开和三键实测 mV、单击/双击/长按、不同电量下的裕量 |
-| codec/I2S | 1 kHz 音调频率/速度、录音非零且回放速度正确、格式切换、退出页面 |
+| codec/I2S | 音效频率/速度正确、格式切换稳定、音频与刷屏并发不冲突 |
 | 电池 | 合理 SOC 和 mV、无电量计时正确降级、断续 I2C 的错误恢复表现 |
-| Wi-Fi | 扫描总数和 SSID/RSSI 可见、OK 重扫描、反复进出后仍可扫描 |
-| Bluetooth LE | 手机看到 `FoloPassport`、OK 重启广播、退出后广播消失、反复进出无重启 |
-| light/deep sleep | Low Power 页用 UP/DOWN 选择、OK 执行；light sleep 约 2 秒后原地恢复背光；deep sleep 约 5 秒后重启，页面显示 timer 唤醒和 RTC 保留计数 |
+| Bluetooth LE | 手机看到同步广播、资料同步后首页身份区更新、空闲 10 分钟后广播暂停、按键恢复 |
 | DMA/内存/UI | build 内存报告、运行时最小堆/最大块、音频与刷屏并发稳定性 |
 
 ## 14. 故障症状速查
@@ -445,9 +436,7 @@ idf.py flash monitor
 | 录音全零 | `no_dac_ref` 是否为 true、DIN GPIO4、麦克风通路和输入增益 |
 | 录音缓冲分配失败 | C3 无 PSRAM；缩短录音或改流式，检查 largest free block |
 | 电量显示 `--` | 0x63 是否应答、SOC 是否读到 >100/0xFF、profile/启动等待 |
-| Wi-Fi/BLE 第二次进入失败 | 退出页时是否已停止并 deinit radio stack，NVS/event loop 是否只初始化一次 |
-| light sleep 后黑屏 | timer wake source、`esp_light_sleep_start()` 错误日志、唤醒后是否恢复背光 |
-| deep sleep 后未重启 | timer wake source、启动日志的 wake cause、页面 RTC 计数；当前 demo 使用 RTC timer 唤醒 |
+| 音频无声 | sfx 任务是否就绪（sfx_status）、10 分钟空闲后 codec 是否已被下电、按键是否恢复 |
 | 加大 UI 后 I2S NO_MEM | LCD 双缓冲/LVGL pool 与 I2S DMA 争夺内部 RAM |
 | 中文显示为方框 | Montserrat 14/20 不含 CJK glyph；编译并选用中文字体子集，为混排配置 fallback，并在真机核对全部字符 |
 
