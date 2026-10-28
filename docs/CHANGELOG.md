@@ -6,6 +6,8 @@
 
 ## Unreleased
 
+- Rewrote the workshop intro entry as a short instruction manual written in the mascot's own voice: it introduces CHACKER as a coding assistant the user summons by asking an AI tool to read the repository's guide file, states how it speaks and that it confirms a plan before writing code, and keeps the two-step recipe plus the scope and flashing rules for adding a mini-app.
+
 - Replaced the fixed six-icon home grid with a scrollable card launcher: an on-device usage guide page, the existing features, and a slot for community mini-games now share one up/down list, with the selected card centered and its neighbors peeking in.
 
 - Added a green wipe transition between screens. The wipe also releases the outgoing screen before building the incoming one, so the device never holds two full screens' worth of drawing memory at once; button presses are ignored while a transition plays.
