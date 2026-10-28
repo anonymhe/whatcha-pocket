@@ -6,6 +6,7 @@
 #include "pages.h"
 #include "sfx.h"
 #include "ble_sync.h"
+#include "cha_pool.h"
 #include "bsp_battery.h"
 #include "lvgl.h"
 #include <stdio.h>
@@ -23,14 +24,21 @@ LV_FONT_DECLARE(font_ps16);
 #define SYNC_TIMEOUT_MS   90000   // 90 秒无按键超时返回首页
 #define SYNC_DONE_MS      2000    // 同步完成提示停留后返回首页
 
+// 二维码中心猹的绘制尺寸：素材 72×64，缩放 128/256 = 一半。
+#define MID_SCALE         128
+#define MID_W             (72 * MID_SCALE / 256)   // 36
+#define MID_H             (64 * MID_SCALE / 256)   // 32
+
 static lv_obj_t  *s_scr;
 static lv_obj_t  *s_batt_lbl;
 static lv_obj_t  *s_status_lbl;
 static lv_timer_t *s_batt_timer;
 static lv_timer_t *s_poll_timer;     // 轮询同步结果
 static lv_timer_t *s_timeout_timer;  // 90s 超时
+static lv_timer_t *s_status_timer;   // 1s 刷新倒计时 + 蓝牙状态
 static lv_timer_t *s_done_timer;     // 完成后延时返回
 static bool        s_done;           // 已完成，忽略后续按键/超时
+static uint32_t    s_start_tick;      // 本次超时计时的起点（lv_tick）
 
 static lv_obj_t *mk_label(lv_obj_t *par, const char *txt, const lv_font_t *f, uint32_t c)
 {
@@ -71,7 +79,31 @@ static void build_url(char *out, size_t len)
     snprintf(out, len, WATCHA_SYNC_BASE "?s=%s&k=%s", ble_sync_mac12(), key);
 }
 
-static void go_home(lv_timer_t *t) { (void)t; page_home(); }
+static void go_home(lv_timer_t *t)
+{
+    (void)t;
+    s_done_timer = NULL;   // 本 timer 的 repeat_count=1，返回后 LVGL 自己释放；不清指针会让 page_exit 二次释放
+    page_home();
+}
+
+// 状态行：倒计时 + 蓝牙状态。完成后由 poll_tick 改成「同步完成」，这里不再刷新。
+static void status_tick(lv_timer_t *t)
+{
+    (void)t;
+    if (s_done || !s_status_lbl) return;
+    uint32_t elapsed = lv_tick_elaps(s_start_tick);
+    int left = elapsed >= SYNC_TIMEOUT_MS ? 0 : (int)((SYNC_TIMEOUT_MS - elapsed) / 1000);
+
+    const char *ble;
+    switch (ble_sync_state()) {
+    case BLE_SYNC_CONN: ble = "蓝牙已连接"; break;
+    case BLE_SYNC_ADV:  ble = "蓝牙就绪";   break;
+    default:            ble = "蓝牙启动中"; break;
+    }
+    char buf[48];
+    snprintf(buf, sizeof buf, "%s · %ds", ble, left);
+    lv_label_set_text(s_status_lbl, buf);
+}
 
 // 轮询：收到有效同步数据 → 提示完成，SYNC_DONE_MS 后回首页。
 static void poll_tick(lv_timer_t *t)
@@ -92,6 +124,7 @@ static void poll_tick(lv_timer_t *t)
 static void timeout_tick(lv_timer_t *t)
 {
     (void)t;
+    s_timeout_timer = NULL;   // 同上：repeat_count=1，LVGL 会自删
     if (s_done) return;
     page_home();
 }
@@ -125,6 +158,21 @@ static void page_enter(void)
     lv_obj_set_style_border_width(qr, 6, 0);
     lv_obj_align(qr, LV_ALIGN_TOP_MID, 0, 58);
 
+    // 二维码中心叠一只随机猹。lv_image 的对象框恒为素材原始尺寸（72×64），缩放只改绘制区域，
+    // 所以白底不能加在图片自己身上（那会铺满 72×64 压住二维码），要单独做一张只比绘制区域大一圈的衬底。
+    lv_obj_t *plate = lv_obj_create(s_scr);
+    lv_obj_remove_style_all(plate);
+    lv_obj_remove_flag(plate, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(plate, MID_W + 4, MID_H + 4);
+    lv_obj_set_style_bg_color(plate, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_bg_opa(plate, LV_OPA_COVER, 0);
+    lv_obj_align_to(plate, qr, LV_ALIGN_CENTER, 0, 0);
+
+    lv_obj_t *mid = lv_image_create(s_scr);
+    lv_image_set_src(mid, cha_random_72());
+    lv_image_set_scale(mid, MID_SCALE);   // 72×64 缩到 36×32，约 10×9 个二维码模块
+    lv_obj_align_to(mid, qr, LV_ALIGN_CENTER, 0, 0);
+
     // 设备编号：大号像素字只排 ASCII（font_ps16 无中文字形），中文说明放下一行 CJK 字体。
     char dev[32];
     snprintf(dev, sizeof dev, "#E6B93C No.%s#", ble_sync_device_id());
@@ -132,8 +180,8 @@ static void page_enter(void)
     lv_label_set_recolor(dl, true);
     lv_obj_align(dl, LV_ALIGN_TOP_MID, 0, 224);
 
-    // 状态行：初始「等待连接」，完成时变「同步完成」
-    s_status_lbl = mk_label(s_scr, "设备编号 · 等待扫码连接", &font_fusion12, C_MUTED);
+    // 提示信息：倒计时 + 蓝牙状态；与上方说明到分隔线保持相同间距。完成时变「同步完成」。
+    s_status_lbl = mk_label(s_scr, "蓝牙启动中 · 90s", &font_fusion12, C_MUTED);
     lv_obj_align(s_status_lbl, LV_ALIGN_TOP_MID, 0, 248);
 
     // 底部返回提示
@@ -149,6 +197,9 @@ static void page_enter(void)
     s_poll_timer    = lv_timer_create(poll_tick, 200, NULL);
     s_timeout_timer = lv_timer_create(timeout_tick, SYNC_TIMEOUT_MS, NULL);
     lv_timer_set_repeat_count(s_timeout_timer, 1);
+    s_start_tick    = lv_tick_get();
+    s_status_timer  = lv_timer_create(status_tick, 500, NULL);
+    status_tick(NULL);   // 立即刷一次，避免首帧显示占位文案
     power_keep_awake(true);   // 同步页全程亮屏，不被 30s 调暗打扰（超时由本页 90s 控制）
     lv_screen_load(s_scr);
 }
@@ -160,6 +211,7 @@ static void page_exit(void)
     if (s_batt_timer)    { lv_timer_delete(s_batt_timer);    s_batt_timer = NULL; }
     if (s_poll_timer)    { lv_timer_delete(s_poll_timer);    s_poll_timer = NULL; }
     if (s_timeout_timer) { lv_timer_delete(s_timeout_timer); s_timeout_timer = NULL; }
+    if (s_status_timer)  { lv_timer_delete(s_status_timer);  s_status_timer = NULL; }
     if (s_done_timer)    { lv_timer_delete(s_done_timer);    s_done_timer = NULL; }
     s_batt_lbl = NULL;
     s_status_lbl = NULL;
@@ -170,7 +222,11 @@ static void page_key_cb(bsp_btn_t btn, bsp_btn_ev_t ev)
 {
     (void)btn; (void)ev;   // 长按确认返回由 pages.c 统一拦截
     // 任意按键重置 90s 超时（完成后不再重置）
-    if (!s_done && s_timeout_timer) lv_timer_reset(s_timeout_timer);
+    if (!s_done && s_timeout_timer) {
+        lv_timer_reset(s_timeout_timer);
+        s_start_tick = lv_tick_get();
+        status_tick(NULL);
+    }
 }
 
 const page_t page_sync = { "page_sync", page_enter, page_exit, page_key_cb };
