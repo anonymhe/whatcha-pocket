@@ -6,6 +6,8 @@
 
 ## Unreleased
 
+- Moved the sync screen's remaining-time countdown onto its own line, shown in the pixel digit font the other numeric readouts use. Keeping it inside the Bluetooth status sentence made the numbers look like a different, smaller typeface next to the Chinese text.
+
 - Fixed the sync screen freezing or restarting the device when it returned to the home screen on its own, either after a completed sync or on the 90-second timeout. The one-shot timers that drive those two returns now clear their own handles before running, so leaving the page no longer frees an already-released timer. Returning with a long press was unaffected.
 
 - Rewrote the workshop intro entry as a short instruction manual written in the mascot's own voice: it introduces CHACKER as a coding assistant the user summons by asking an AI tool to read the repository's guide file, states how it speaks and that it confirms a plan before writing code, and keeps the two-step recipe plus the scope and flashing rules for adding a mini-app.
