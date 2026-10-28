@@ -24,6 +24,11 @@ LV_FONT_DECLARE(font_ps16);
 #define SYNC_TIMEOUT_MS   90000   // 90 秒无按键超时返回首页
 #define SYNC_DONE_MS      2000    // 同步完成提示停留后返回首页
 
+// 二维码中心猹的绘制尺寸：素材 72×64，缩放 128/256 = 一半。
+#define MID_SCALE         128
+#define MID_W             (72 * MID_SCALE / 256)   // 36
+#define MID_H             (64 * MID_SCALE / 256)   // 32
+
 static lv_obj_t  *s_scr;
 static lv_obj_t  *s_batt_lbl;
 static lv_obj_t  *s_status_lbl;
@@ -74,7 +79,12 @@ static void build_url(char *out, size_t len)
     snprintf(out, len, WATCHA_SYNC_BASE "?s=%s&k=%s", ble_sync_mac12(), key);
 }
 
-static void go_home(lv_timer_t *t) { (void)t; page_home(); }
+static void go_home(lv_timer_t *t)
+{
+    (void)t;
+    s_done_timer = NULL;   // 本 timer 的 repeat_count=1，返回后 LVGL 自己释放；不清指针会让 page_exit 二次释放
+    page_home();
+}
 
 // 状态行：倒计时 + 蓝牙状态。完成后由 poll_tick 改成「同步完成」，这里不再刷新。
 static void status_tick(lv_timer_t *t)
@@ -114,6 +124,7 @@ static void poll_tick(lv_timer_t *t)
 static void timeout_tick(lv_timer_t *t)
 {
     (void)t;
+    s_timeout_timer = NULL;   // 同上：repeat_count=1，LVGL 会自删
     if (s_done) return;
     page_home();
 }
@@ -147,13 +158,19 @@ static void page_enter(void)
     lv_obj_set_style_border_width(qr, 6, 0);
     lv_obj_align(qr, LV_ALIGN_TOP_MID, 0, 58);
 
-    // 二维码中心叠一只随机猹（白边衬底，带纠错的二维码遮住一点中心仍可扫）
+    // 二维码中心叠一只随机猹。lv_image 的对象框恒为素材原始尺寸（72×64），缩放只改绘制区域，
+    // 所以白底不能加在图片自己身上（那会铺满 72×64 压住二维码），要单独做一张只比绘制区域大一圈的衬底。
+    lv_obj_t *plate = lv_obj_create(s_scr);
+    lv_obj_remove_style_all(plate);
+    lv_obj_remove_flag(plate, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(plate, MID_W + 4, MID_H + 4);
+    lv_obj_set_style_bg_color(plate, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_bg_opa(plate, LV_OPA_COVER, 0);
+    lv_obj_align_to(plate, qr, LV_ALIGN_CENTER, 0, 0);
+
     lv_obj_t *mid = lv_image_create(s_scr);
     lv_image_set_src(mid, cha_random_72());
-    lv_image_set_scale(mid, 128);   // 72×64 缩到约 36×32，占二维码约 1/4
-    lv_obj_set_style_bg_color(mid, lv_color_hex(0xFFFFFF), 0);
-    lv_obj_set_style_bg_opa(mid, LV_OPA_COVER, 0);
-    lv_obj_set_style_pad_all(mid, 2, 0);
+    lv_image_set_scale(mid, MID_SCALE);   // 72×64 缩到 36×32，约 10×9 个二维码模块
     lv_obj_align_to(mid, qr, LV_ALIGN_CENTER, 0, 0);
 
     // 设备编号：大号像素字只排 ASCII（font_ps16 无中文字形），中文说明放下一行 CJK 字体。
