@@ -6,6 +6,8 @@
 
 ## Unreleased
 
+- Gave every detail screen the same top bar: page name on the left, battery percentage on the right, drawn by one shared helper along with the divider, so pages can no longer drift apart. The usage guide, which had no battery readout at all, now shows one; Pocket New keeps its position counter in the right corner, now written in hex (`0x01`, `0x02`, ...) in keeping with the retro styling.
+
 - Moved the sync screen's remaining-time countdown onto its own line, shown in the pixel digit font the other numeric readouts use. Keeping it inside the Bluetooth status sentence made the numbers look like a different, smaller typeface next to the Chinese text.
 
 - Fixed the sync screen freezing or restarting the device when it returned to the home screen on its own, either after a completed sync or on the 90-second timeout. The one-shot timers that drive those two returns now clear their own handles before running, so leaving the page no longer frees an already-released timer. Returning with a long press was unaffected.
@@ -13,6 +15,7 @@
 - Rewrote the workshop intro entry as a short instruction manual written in the mascot's own voice: it introduces CHACKER as a coding assistant the user summons by asking an AI tool to read the repository's guide file, states how it speaks and that it confirms a plan before writing code, and keeps the two-step recipe plus the scope and flashing rules for adding a mini-app.
 
 - Reworked the sync screen's hint line below the QR code so it mirrors the spacing of the hint above it, and changed it to show a live timeout countdown alongside the current Bluetooth status (starting up, ready, or connected) while keeping the device number. A small random mascot now sits in the center of the QR code, on a backing plate sized to the mascot itself rather than to the source artwork, so the white area no longer spreads across a quarter of the code.
+
 
 - Replaced the fixed six-icon home grid with a scrollable card launcher: an on-device usage guide page, the existing features, and a slot for community mini-games now share one up/down list, with the selected card centered and its neighbors peeking in.
 

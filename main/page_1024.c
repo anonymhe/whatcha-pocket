@@ -1,8 +1,8 @@
 // main/page_1024.c — 1024(2048) 合成游戏
 #include "pages.h"
+#include "app_ui.h"
 #include "storage.h"
 #include "sfx.h"
-#include "bsp_battery.h"
 #include "esp_random.h"
 #include <stdio.h>
 #include <string.h>
@@ -43,7 +43,7 @@ static uint32_t s_score, s_best;
 static state_t  s_state;
 static bool     s_won_shown;
 
-static lv_obj_t *s_scr, *s_batt_lbl;
+static lv_obj_t *s_scr;
 static lv_obj_t *s_nums[ROWS][COLS];   /* 每格一个带背景的 label，兼作方块 */
 static lv_obj_t *s_score_lbl, *s_best_lbl;
 /* 说明页 / 结束页 / 胜利页：全部扁平放在 s_scr 上，用列表记指针方便整组删除
@@ -52,7 +52,7 @@ static lv_obj_t *s_score_lbl, *s_best_lbl;
 static lv_obj_t *s_ovl[OVL_MAX];
 static int s_ovl_n;
 static lv_obj_t *s_go_score_lbl, *s_go_best_lbl;
-static lv_timer_t *s_batt_timer, *s_dbl_timer;
+static lv_timer_t *s_dbl_timer;
 static int s_ok_count;
 static lv_obj_t *mk(lv_obj_t *p, const char *t, const lv_font_t *f, uint32_t col)
 {
@@ -73,16 +73,6 @@ static lv_obj_t *rect(lv_obj_t *p, int x, int y, int w, int h, uint32_t col)
     lv_obj_set_style_bg_color(o, lv_color_hex(col), 0);
     lv_obj_set_style_bg_opa(o, LV_OPA_COVER, 0);
     return o;
-}
-
-static void batt_tick(lv_timer_t *t)
-{
-    (void)t; if (!s_batt_lbl) return;
-    int soc = bsp_battery_soc();
-    char buf[16];
-    if (soc < 0) snprintf(buf, sizeof buf, "--%%");
-    else         snprintf(buf, sizeof buf, "%d%%", soc);
-    lv_label_set_text(s_batt_lbl, buf);
 }
 
 /* ---- 游戏逻辑 ---- */
@@ -331,11 +321,7 @@ static void page_enter(void)
     s_state = ST_INTRO; /* 按键暂不响应游戏操作 */
 
     lv_obj_t *l;
-    l = mk(s_scr, "1024", &font_ps8, C_GREEN);   lv_obj_set_pos(l, 18, 9);
-    s_batt_lbl = mk(s_scr, "", &font_ps8, C_MUTED); lv_obj_set_pos(s_batt_lbl, 198, 9);
-    batt_tick(NULL);
-    s_batt_timer = lv_timer_create(batt_tick, 30000, NULL);
-    rect(s_scr, 0, 26, 240, 1, C_LINE);
+    ui_topbar_ex(s_scr, "1024", &font_ps8);
 
     l = mk(s_scr, "分数", &font_fusion12, C_MUTED);     lv_obj_set_pos(l, 18, 32);
     s_score_lbl = mk(s_scr, "0", &font_ps8, C_GREEN);  lv_obj_set_pos(s_score_lbl, 50, 36);
@@ -353,8 +339,6 @@ static void page_exit(void)
 {
     cancel_dbl();
     if (s_init_timer) { lv_timer_delete(s_init_timer); s_init_timer = NULL; }
-    if (s_batt_timer) { lv_timer_delete(s_batt_timer); s_batt_timer = NULL; }
-    s_batt_lbl = NULL;
     store_set_u32(NVS_BEST, s_best);
     if (s_scr) { lv_obj_delete(s_scr); s_scr = NULL; }
     s_ovl_n = 0;

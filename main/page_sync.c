@@ -4,10 +4,10 @@
 //   · 90 秒无按键自动超时并返回首页；任意按键重置 90 秒计时。
 //   · 收到有效同步数据后显示「同步完成」提示，约 2 秒后自动返回首页。
 #include "pages.h"
+#include "app_ui.h"
 #include "sfx.h"
 #include "ble_sync.h"
 #include "cha_pool.h"
-#include "bsp_battery.h"
 #include "lvgl.h"
 #include <stdio.h>
 #include <string.h>
@@ -30,10 +30,8 @@ LV_FONT_DECLARE(font_ps16);
 #define MID_H             (64 * MID_SCALE / 256)   // 32
 
 static lv_obj_t  *s_scr;
-static lv_obj_t  *s_batt_lbl;
 static lv_obj_t  *s_status_lbl;
 static lv_obj_t  *s_count_lbl;       // 剩余秒数（font_ps8，纯 ASCII）
-static lv_timer_t *s_batt_timer;
 static lv_timer_t *s_poll_timer;     // 轮询同步结果
 static lv_timer_t *s_timeout_timer;  // 90s 超时
 static lv_timer_t *s_status_timer;   // 1s 刷新倒计时 + 蓝牙状态
@@ -58,17 +56,6 @@ static void hline(lv_obj_t *par, int y)
     lv_obj_set_pos(r, 0, y);
     lv_obj_set_style_bg_color(r, lv_color_hex(C_LINE), 0);
     lv_obj_set_style_bg_opa(r, LV_OPA_COVER, 0);
-}
-
-static void batt_tick(lv_timer_t *t)
-{
-    (void)t;
-    if (!s_batt_lbl) return;
-    int soc = bsp_battery_soc();
-    char buf[16];
-    if (soc < 0) snprintf(buf, sizeof buf, "--%%");
-    else         snprintf(buf, sizeof buf, "%d%%", soc);
-    lv_label_set_text(s_batt_lbl, buf);
 }
 
 // 把二维码内容拼出来：带本机 MAC，若有出厂密钥再带 k。
@@ -138,12 +125,7 @@ static void page_enter(void)
     s_done = false;
 
     // 顶栏：标题 + 右上角电量
-    lv_obj_t *tl = mk_label(s_scr, "同步", &font_fusion12, C_GREEN);
-    lv_obj_set_pos(tl, 18, 9);
-    s_batt_lbl = mk_label(s_scr, "", &font_ps8, C_MUTED);
-    lv_obj_set_pos(s_batt_lbl, 198, 9);
-    batt_tick(NULL);
-    hline(s_scr, 26);
+    ui_topbar(s_scr, "同步");
 
     // 说明
     lv_obj_t *hint = mk_label(s_scr, "微信扫码 连接观猹小程序", &font_fusion12, C_TEXT);
@@ -200,7 +182,6 @@ static void page_enter(void)
     ble_sync_take_updated();   // 清掉进页前的旧标志
     ble_sync_adv_begin();
 
-    s_batt_timer    = lv_timer_create(batt_tick, 30000, NULL);
     s_poll_timer    = lv_timer_create(poll_tick, 200, NULL);
     s_timeout_timer = lv_timer_create(timeout_tick, SYNC_TIMEOUT_MS, NULL);
     lv_timer_set_repeat_count(s_timeout_timer, 1);
@@ -215,12 +196,10 @@ static void page_exit(void)
 {
     power_keep_awake(false);   // 离页恢复正常省电
     ble_sync_adv_end();   // 离页即关蓝牙
-    if (s_batt_timer)    { lv_timer_delete(s_batt_timer);    s_batt_timer = NULL; }
     if (s_poll_timer)    { lv_timer_delete(s_poll_timer);    s_poll_timer = NULL; }
     if (s_timeout_timer) { lv_timer_delete(s_timeout_timer); s_timeout_timer = NULL; }
     if (s_status_timer)  { lv_timer_delete(s_status_timer);  s_status_timer = NULL; }
     if (s_done_timer)    { lv_timer_delete(s_done_timer);    s_done_timer = NULL; }
-    s_batt_lbl = NULL;
     s_status_lbl = NULL;
     s_count_lbl = NULL;
     if (s_scr) { lv_obj_delete(s_scr); s_scr = NULL; }
