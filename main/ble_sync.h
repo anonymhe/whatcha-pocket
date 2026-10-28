@@ -25,3 +25,11 @@ bool        ble_sync_take_updated(void);   // 有新同步返回 true 并清标�
 // 广播只在同步页开启：进页调 begin 开始广播，离页调 end 停止广播并断开连接。
 void        ble_sync_adv_begin(void);
 void        ble_sync_adv_end(void);
+
+// 蓝牙当前状态（同步页用于提示用户）：
+typedef enum {
+    BLE_SYNC_INIT = 0,   // 主机未就绪（蓝牙还在启动）
+    BLE_SYNC_ADV,        // 正在广播，等待扫码连接
+    BLE_SYNC_CONN,       // 已连接，正在同步
+} ble_sync_state_t;
+ble_sync_state_t ble_sync_state(void);

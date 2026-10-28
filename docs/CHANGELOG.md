@@ -6,6 +6,8 @@
 
 ## Unreleased
 
+- Reworked the sync screen's hint line below the QR code so it mirrors the spacing of the hint above it, and changed it to show a live timeout countdown alongside the current Bluetooth status (starting up, ready, or connected) while keeping the device number. A small random mascot now sits in the center of the QR code.
+
 - Replaced the fixed six-icon home grid with a scrollable card launcher: an on-device usage guide page, the existing features, and a slot for community mini-games now share one up/down list, with the selected card centered and its neighbors peeking in.
 
 - Added a green wipe transition between screens. The wipe also releases the outgoing screen before building the incoming one, so the device never holds two full screens' worth of drawing memory at once; button presses are ignored while a transition plays.

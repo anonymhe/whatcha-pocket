@@ -260,6 +260,14 @@ void ble_sync_adv_end(void)
     ESP_LOGI(TAG, "adv end");
 }
 
+// 同步页提示用：已连接 → CONN，主机就绪且在广播 → ADV，否则 INIT（蓝牙启动中）。
+ble_sync_state_t ble_sync_state(void)
+{
+    if (s_conn) return BLE_SYNC_CONN;
+    if (s_adv && s_host_ready) return BLE_SYNC_ADV;
+    return BLE_SYNC_INIT;
+}
+
 static void on_sync(void)
 {
     int rc = ble_hs_util_ensure_addr(0);
