@@ -17,13 +17,29 @@
 #include "app_ui.h"
 #include "sfx.h"
 
-static lv_obj_t *s_scr, *s_body;
+static lv_obj_t *s_scr, *s_body, *s_cursor;
+static lv_timer_t *s_blink;
+
+static void blink_tick(lv_timer_t *t)
+{
+    (void)t;
+    if (!s_cursor) return;
+    bool on = lv_obj_get_style_bg_opa(s_cursor, 0) == LV_OPA_COVER;
+    lv_obj_set_style_bg_opa(s_cursor, on ? LV_OPA_TRANSP : LV_OPA_COVER, 0);
+}
 
 static lv_obj_t *para(lv_obj_t *par, const char *txt, const lv_font_t *f, uint32_t c)
 {
     lv_obj_t *l = ui_label(par, txt, f, c);
     lv_obj_set_width(l, 208);
     lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
+    return l;
+}
+
+static lv_obj_t *inline_text(lv_obj_t *par, const char *txt, const lv_font_t *f, uint32_t c)
+{
+    lv_obj_t *l = ui_label(par, txt, f, c);
+    lv_obj_set_width(l, LV_SIZE_CONTENT);
     return l;
 }
 
@@ -77,7 +93,19 @@ static void app_enter(void)
          "下一个「决策猹」是示例玩法，写新玩法先读它的源码。细节都在 pocket-guide 和 CHACKER.md 里。",
          &font_fusion12, C_MUTED);
 
-    para(s_body, "—— 代码小猹 CHACKER", &font_fusion12, C_MUTED);
+    lv_obj_t *row = lv_obj_create(s_body);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_width(row, 208);
+    lv_obj_set_height(row, 24);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(row, 2, 0);
+    lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+
+    inline_text(row, ">", &font_fusion20, C_GREEN);
+    inline_text(row, "代码小猹 CHACKER", &font_fusion20, C_GREEN);
+    s_cursor = ui_block(row, 0, 0, 10, 14, C_GREEN);
+    s_blink = lv_timer_create(blink_tick, 500, NULL);
 
     ui_footer(s_scr, "\xE2\x96\xB2\xE2\x96\xBC 滚动 · 长按返回");
     lv_screen_load(s_scr);
@@ -85,6 +113,8 @@ static void app_enter(void)
 
 static void app_exit(void)
 {
+    if (s_blink) { lv_timer_delete(s_blink); s_blink = NULL; }
+    s_cursor = NULL;
     s_body = NULL;
     if (s_scr) { lv_obj_delete(s_scr); s_scr = NULL; }
 }
