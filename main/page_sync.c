@@ -32,6 +32,7 @@ LV_FONT_DECLARE(font_ps16);
 static lv_obj_t  *s_scr;
 static lv_obj_t  *s_batt_lbl;
 static lv_obj_t  *s_status_lbl;
+static lv_obj_t  *s_count_lbl;       // 剩余秒数（font_ps8，纯 ASCII）
 static lv_timer_t *s_batt_timer;
 static lv_timer_t *s_poll_timer;     // 轮询同步结果
 static lv_timer_t *s_timeout_timer;  // 90s 超时
@@ -86,7 +87,8 @@ static void go_home(lv_timer_t *t)
     page_home();
 }
 
-// 状态行：倒计时 + 蓝牙状态。完成后由 poll_tick 改成「同步完成」，这里不再刷新。
+// 状态行：蓝牙状态用中文正文字体；剩余秒数单独一行用像素数字字体，避免同一条文字里
+// 混排半角数字和中文时高度、字宽都对不齐。
 static void status_tick(lv_timer_t *t)
 {
     (void)t;
@@ -100,9 +102,9 @@ static void status_tick(lv_timer_t *t)
     case BLE_SYNC_ADV:  ble = "蓝牙就绪";   break;
     default:            ble = "蓝牙启动中"; break;
     }
-    char buf[48];
-    snprintf(buf, sizeof buf, "%s · %ds", ble, left);
-    lv_label_set_text(s_status_lbl, buf);
+    lv_label_set_text(s_status_lbl, ble);
+
+    lv_label_set_text_fmt(s_count_lbl, "%d", left);
 }
 
 // 轮询：收到有效同步数据 → 提示完成，SYNC_DONE_MS 后回首页。
@@ -114,6 +116,7 @@ static void poll_tick(lv_timer_t *t)
         s_done = true;
         lv_label_set_text(s_status_lbl, "同步完成");
         lv_obj_set_style_text_color(s_status_lbl, lv_color_hex(C_GREEN), 0);
+        lv_label_set_text(s_count_lbl, "");
         sfx_play(SFX_RECORD);
         if (s_timeout_timer) { lv_timer_delete(s_timeout_timer); s_timeout_timer = NULL; }
         if (!s_done_timer) { s_done_timer = lv_timer_create(go_home, SYNC_DONE_MS, NULL); lv_timer_set_repeat_count(s_done_timer, 1); }
@@ -180,9 +183,13 @@ static void page_enter(void)
     lv_label_set_recolor(dl, true);
     lv_obj_align(dl, LV_ALIGN_TOP_MID, 0, 224);
 
-    // 提示信息：倒计时 + 蓝牙状态；与上方说明到分隔线保持相同间距。完成时变「同步完成」。
-    s_status_lbl = mk_label(s_scr, "蓝牙启动中 · 90s", &font_fusion12, C_MUTED);
-    lv_obj_align(s_status_lbl, LV_ALIGN_TOP_MID, 0, 248);
+    // 蓝牙状态（中文正文字体）与剩余秒数（像素数字字体）分两行，各自用能排满一行的高度，
+    // 不再在同一条文字里混排中文和半角数字。完成时状态行变「同步完成」、秒数行清空。
+    s_status_lbl = mk_label(s_scr, "蓝牙启动中", &font_fusion12, C_MUTED);
+    lv_obj_align(s_status_lbl, LV_ALIGN_TOP_MID, 0, 252);
+
+    s_count_lbl = mk_label(s_scr, "90s", &font_ps8, C_MUTED);
+    lv_obj_align(s_count_lbl, LV_ALIGN_TOP_MID, 0, 270);
 
     // 底部返回提示
     hline(s_scr, 292);
@@ -215,6 +222,7 @@ static void page_exit(void)
     if (s_done_timer)    { lv_timer_delete(s_done_timer);    s_done_timer = NULL; }
     s_batt_lbl = NULL;
     s_status_lbl = NULL;
+    s_count_lbl = NULL;
     if (s_scr) { lv_obj_delete(s_scr); s_scr = NULL; }
 }
 
