@@ -12,9 +12,19 @@
 #define ROW_GAP 4
 #define ROWS   7
 
-static lv_obj_t *s_scr, *s_desc;
+static lv_obj_t *s_scr, *s_desc, *s_pos;
 static lv_obj_t *s_rows[ROWS], *s_names[ROWS];
 static int s_sel, s_top;
+
+// 顶栏右侧是位置计数而不是电量：用 `0x??` 的十六进制口味标出当前选中第几个。
+static void refresh_pos(void)
+{
+    if (!s_pos) return;
+    char buf[8];
+    if (APPS_N <= 0) snprintf(buf, sizeof buf, "--");
+    else             snprintf(buf, sizeof buf, "0x%02X", (unsigned)(s_sel + 1));
+    lv_label_set_text(s_pos, buf);
+}
 
 static void refresh(void)
 {
@@ -32,16 +42,18 @@ static void refresh(void)
         lv_obj_set_style_text_color(s_names[i], lv_color_hex(on ? C_GREEN : C_TEXT), 0);
     }
     lv_label_set_text(s_desc, APPS[s_sel].desc ? APPS[s_sel].desc : "");
+    refresh_pos();
 }
 
 static void lab_enter(void)
 {
     s_scr = page_screen_create();
-    ui_topbar(s_scr, "口袋上新");
-    char n[16];
-    snprintf(n, sizeof n, "%d", APPS_N);
-    lv_obj_t *cnt = ui_label(s_scr, n, &font_ps8, C_MUTED);
-    lv_obj_align(cnt, LV_ALIGN_TOP_RIGHT, -18, 11);
+    // 顶栏：左名称、右位置计数（本页不显示电量，用 0x?? 十六进制计数代替）
+    lv_obj_t *title = ui_label(s_scr, "口袋上新", &font_fusion12, C_GREEN);
+    lv_obj_set_pos(title, UI_TOP_TITLE_X, UI_TOP_TITLE_Y);
+    s_pos = ui_label(s_scr, "", &font_ps8, C_MUTED);
+    lv_obj_set_pos(s_pos, UI_TOP_RIGHT_X, UI_TOP_RIGHT_Y);
+    ui_block(s_scr, 0, UI_TOP_LINE_Y, UI_W, 1, C_LINE);
 
     for (int i = 0; i < ROWS; i++) {
         s_rows[i] = ui_block(s_scr, ROW_X, ROW_Y0 + i * (ROW_H + ROW_GAP), ROW_W, ROW_H, C_CARD);
@@ -56,6 +68,7 @@ static void lab_enter(void)
 
     if (APPS_N <= 0) {
         lv_label_set_text(s_desc, "还没有玩法，照着 prompts 写一只吧");
+        refresh_pos();
     } else {
         if (s_sel >= APPS_N) s_sel = 0;
         refresh();
@@ -65,6 +78,7 @@ static void lab_enter(void)
 
 static void lab_exit(void)
 {
+    s_pos = NULL;
     if (s_scr) { lv_obj_delete(s_scr); s_scr = NULL; }
 }
 

@@ -1,8 +1,8 @@
 // main/page_melon.c — 吃瓜猹：反应测试
 #include "pages.h"
+#include "app_ui.h"
 #include "storage.h"
 #include "sfx.h"
-#include "bsp_battery.h"
 #include "esp_timer.h"
 #include "esp_random.h"
 #include <stdio.h>
@@ -18,8 +18,8 @@ typedef enum { ST_IDLE, ST_WAIT, ST_GO, ST_RESULT, ST_TOOFAST } state_t;
 
 #define NVS_KEY "melon_best"
 
-static lv_obj_t *s_scr, *s_body, *s_batt_lbl;
-static lv_timer_t *s_batt_timer, *s_wait_timer;
+static lv_obj_t *s_scr, *s_body;
+static lv_timer_t *s_wait_timer;
 static state_t s_state;
 static int64_t  s_t0;
 static uint32_t s_best, s_last_ms;
@@ -46,25 +46,9 @@ static void hline(int y)
     lv_obj_set_pos(r, 0, y);
 }
 
-static void batt_tick(lv_timer_t *t)
-{
-    (void)t;
-    if (!s_batt_lbl) return;
-    int soc = bsp_battery_soc();
-    char buf[16];
-    if (soc < 0) snprintf(buf, sizeof buf, "--%%");
-    else         snprintf(buf, sizeof buf, "%d%%", soc);
-    lv_label_set_text(s_batt_lbl, buf);
-}
-
 static void topbar(void)
 {
-    lv_obj_t *l = mk(s_body, "吃瓜猹", &font_fusion12, C_GREEN);
-    lv_obj_set_pos(l, 18, 9);
-    s_batt_lbl = mk(s_body, "", &font_ps8, C_MUTED);
-    lv_obj_set_pos(s_batt_lbl, 198, 9);
-    batt_tick(NULL);
-    hline(26);
+    ui_topbar(s_body, "吃瓜猹");
 }
 
 static void botbar(const char *hint)
@@ -95,7 +79,6 @@ static void wait_fire(lv_timer_t *t)
 static void set_state(state_t st)
 {
     s_state = st;
-    s_batt_lbl = NULL;
     if (s_wait_timer) { lv_timer_delete(s_wait_timer); s_wait_timer = NULL; }
     lv_obj_clean(s_body);
     lv_obj_set_style_border_width(s_scr, 0, 0);
@@ -181,9 +164,7 @@ static void page_enter(void)
     lv_obj_set_pos(s_body, 0, 0);
 
     s_best = store_get_u32(NVS_KEY, 0);
-    s_batt_timer = lv_timer_create(batt_tick, 30000, NULL);
     s_wait_timer = NULL;
-    s_batt_lbl   = NULL;
 
     set_state(ST_WAIT);   /* 说明页已承担待机页的作用 */
     lv_screen_load(s_scr);
@@ -192,8 +173,6 @@ static void page_enter(void)
 static void page_exit(void)
 {
     if (s_wait_timer) { lv_timer_delete(s_wait_timer); s_wait_timer = NULL; }
-    if (s_batt_timer) { lv_timer_delete(s_batt_timer); s_batt_timer = NULL; }
-    s_batt_lbl = NULL;
     if (s_scr) { lv_obj_delete(s_scr); s_scr = NULL; s_body = NULL; }
 }
 

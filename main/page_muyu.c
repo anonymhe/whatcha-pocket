@@ -1,8 +1,8 @@
 // main/page_muyu.c —— 木鱼猹：按确认摸猹，功德 +1
 #include "pages.h"
+#include "app_ui.h"
 #include "storage.h"
 #include "sfx.h"
-#include "bsp_battery.h"
 #include <stdio.h>
 
 LV_FONT_DECLARE(font_fusion12);
@@ -28,8 +28,8 @@ LV_IMAGE_DECLARE(art_muyu_combo);
 #define COMBO_GAP  1000   // ms
 #define COMBO_MIN  10
 
-static lv_obj_t *s_scr, *s_batt, *s_av, *s_num, *s_combo, *s_plus, *s_best_lbl;
-static lv_timer_t *s_batt_timer, *s_combo_timer, *s_flash_timer;
+static lv_obj_t *s_scr, *s_av, *s_num, *s_combo, *s_plus, *s_best_lbl;
+static lv_timer_t *s_combo_timer, *s_flash_timer;
 static uint32_t s_count, s_best, s_saved;   // s_count 本次会话，s_best 历史最高（NVS）
 static uint32_t s_last_tick;
 static uint32_t s_best_enter;   // 进页时的历史最高
@@ -134,15 +134,6 @@ static void flash_border(void)
 }
 
 // ---- 定时器 ----
-static void batt_tick(lv_timer_t *t)
-{
-    (void)t;
-    int soc = bsp_battery_soc();
-    char buf[16];
-    if (soc < 0) snprintf(buf, sizeof buf, "--%%");
-    else         snprintf(buf, sizeof buf, "%d%%", soc);
-    lv_label_set_text(s_batt, buf);
-}
 static void combo_tick(lv_timer_t *t)   // 超过 1s 没按，连击归零
 {
     (void)t;
@@ -176,14 +167,7 @@ static void page_enter(void)
     s_streak = 0;
 
     s_scr = page_screen_create();
-    lv_obj_t *t = label(s_scr, "木鱼猹", &font_fusion12, C_GREEN);
-    lv_obj_set_pos(t, 18, 9);
-    s_batt = label(s_scr, "--%", &font_ps8, C_MUTED);
-    lv_obj_set_pos(s_batt, 198, 9);
-    lv_obj_t *ln = lv_obj_create(s_scr);
-    lv_obj_set_pos(ln, 0, 26); lv_obj_set_size(ln, 240, 1);
-    lv_obj_set_style_bg_color(ln, lv_color_hex(C_LINE), 0);
-    lv_obj_set_style_border_width(ln, 0, 0); lv_obj_set_style_radius(ln, 0, 0);
+    ui_topbar(s_scr, "木鱼猹");
 
     s_av = lv_image_create(s_scr);
     lv_image_set_src(s_av, &art_muyu_normal);
@@ -207,22 +191,19 @@ static void page_enter(void)
     lv_obj_align(h, LV_ALIGN_TOP_MID, 0, 301);
 
     refresh_num();
-    s_batt_timer  = lv_timer_create(batt_tick, 30000, NULL);
     s_combo_timer = lv_timer_create(combo_tick, 200, NULL);
-    batt_tick(NULL);
     lv_screen_load(s_scr);
 }
 
 static void page_exit(void)
 {
     save();
-    if (s_batt_timer)  { lv_timer_delete(s_batt_timer);  s_batt_timer  = NULL; }
     if (s_combo_timer) { lv_timer_delete(s_combo_timer); s_combo_timer = NULL; }
     if (s_flash_timer) { lv_timer_delete(s_flash_timer); s_flash_timer = NULL; }
     if (s_av)   lv_anim_delete(s_av, NULL);
     if (s_plus) lv_anim_delete(s_plus, NULL);
     if (s_scr)  { lv_obj_delete(s_scr); s_scr = NULL; }
-    s_av = s_plus = s_num = s_combo = s_batt = s_best_lbl = NULL;
+    s_av = s_plus = s_num = s_combo = s_best_lbl = NULL;
 }
 
 static void page_key_cb(bsp_btn_t btn, bsp_btn_ev_t ev)
