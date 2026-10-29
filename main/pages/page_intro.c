@@ -1,8 +1,8 @@
 // main/pages/page_intro.c — 通用功能说明页
 #include "pages.h"
+#include "app_ui.h"
 #include "storage.h"
 #include "sfx.h"
-#include "bsp_battery.h"
 #include <stdio.h>
 
 LV_FONT_DECLARE(font_fusion12);
@@ -49,8 +49,6 @@ static const intro_cfg_t CFG[6] = {
 
 /* ---- 状态 ---- */
 static lv_obj_t  *s_scr;
-static lv_obj_t  *s_batt_lbl;
-static lv_timer_t *s_batt_timer;
 static int         s_target;      /* page_open 的目标 idx (1-6) */
 
 /* ---- 工具 ---- */
@@ -75,17 +73,6 @@ static void hline(lv_obj_t *par, int y)
     lv_obj_set_style_bg_opa(r, LV_OPA_COVER, 0);
 }
 
-static void batt_tick(lv_timer_t *t)
-{
-    (void)t;
-    if (!s_batt_lbl) return;
-    int soc = bsp_battery_soc();
-    char buf[16];
-    if (soc < 0) snprintf(buf, sizeof buf, "--%%");
-    else         snprintf(buf, sizeof buf, "%d%%", soc);
-    lv_label_set_text(s_batt_lbl, buf);
-}
-
 /* ---- 页面接口 ---- */
 
 void page_intro_set(int target_idx) { s_target = target_idx; }
@@ -98,12 +85,7 @@ static void page_enter(void)
     const intro_cfg_t *c = &CFG[ci];
 
     /* 顶栏 */
-    lv_obj_t *tl = mk_label(s_scr, c->title, &font_fusion12, C_GREEN);
-    lv_obj_set_pos(tl, 18, 9);
-    s_batt_lbl = mk_label(s_scr, "", &font_ps8, C_MUTED);
-    lv_obj_set_pos(s_batt_lbl, 198, 9);
-    batt_tick(NULL);
-    hline(s_scr, 26);
+    ui_topbar(s_scr, c->title);
 
     /* 猹形象 96x96 + 描述：整体在 27..291 之间上下居中；番茄猹页用同一个位置 */
 #define STAGE_Y (ci == 2 ? 77 : 98)   /* 吃瓜猹多两行字，整组单独居中 */
@@ -142,14 +124,11 @@ static void page_enter(void)
     lv_obj_t *ql = mk_label(s_scr, c->quote, &font_fusion12, C_MUTED);
     lv_obj_align(ql, LV_ALIGN_TOP_MID, 0, 298);
 
-    s_batt_timer = lv_timer_create(batt_tick, 30000, NULL);
     lv_screen_load(s_scr);
 }
 
 static void page_exit(void)
 {
-    if (s_batt_timer) { lv_timer_delete(s_batt_timer); s_batt_timer = NULL; }
-    s_batt_lbl = NULL;
     if (s_scr) { lv_obj_delete(s_scr); s_scr = NULL; }
 }
 

@@ -14,11 +14,25 @@ LV_FONT_DECLARE(font_fusion20);
 LV_FONT_DECLARE(font_ps8);
 LV_FONT_DECLARE(font_ps16);
 
-// 屏幕 240×320。约定：顶栏标题 (18,9)，分隔线 y=26；底栏分隔线 y=292，提示文字 y=298 居中。
+// 屏幕 240×320。约定：顶栏标题 (18,9)、右上角电量 (198,9)，分隔线 y=26；
+// 底栏分隔线 y=292，提示文字 y=298 居中。
 #define UI_W 240
 #define UI_H 320
 
+// 顶栏规范：左边是页面名称，右边是电量（font_ps8）。只有口袋上新用位置计数占据右侧。
+#define UI_TOP_TITLE_X 18
+#define UI_TOP_TITLE_Y 9
+#define UI_TOP_RIGHT_X 198
+#define UI_TOP_RIGHT_Y 9
+#define UI_TOP_LINE_Y  26
+
 lv_obj_t *ui_label(lv_obj_t *parent, const char *text, const lv_font_t *font, uint32_t color);
 lv_obj_t *ui_block(lv_obj_t *parent, int x, int y, int w, int h, uint32_t color);   // 直角色块
-void      ui_topbar(lv_obj_t *scr, const char *title);   // 绿色标题 + 分隔线
+void      ui_topbar(lv_obj_t *scr, const char *title);   // 绿色标题 + 右上角电量 + 分隔线
+void      ui_topbar_ex(lv_obj_t *scr, const char *title, const lv_font_t *title_font);
 void      ui_footer(lv_obj_t *scr, const char *hint);    // 分隔线 + 灰色居中提示
+
+// 电量读数：右上角电量标签 + 30s 自动刷新定时器。读值不可用（-1）时显示 “--%”。
+// 定时器随标签一起销毁，页面无需自行管理。ui_topbar() 已内含，手写顶栏时单独调用。
+lv_obj_t *ui_battery_add(lv_obj_t *parent);
+void      ui_battery_refresh(lv_obj_t *label);   // 立即刷新一次读数

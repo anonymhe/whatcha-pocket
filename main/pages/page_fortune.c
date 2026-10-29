@@ -1,8 +1,8 @@
 // main/pages/page_fortune.c —— 猹好运：一天一签（无时间时按开机次数）
 #include "pages.h"
+#include "app_ui.h"
 #include "storage.h"
 #include "sfx.h"
-#include "bsp_battery.h"
 #include "esp_random.h"
 #include <stdio.h>
 
@@ -40,11 +40,10 @@ static const uint32_t RANK_COL[3] = { C_TEXT, C_GREEN, C_GOLD };
 #define K_DAY "fortune_day"
 #define K_VAL "fortune_val"
 
-static lv_obj_t *s_scr, *s_batt, *s_av, *s_rank_lbl, *s_yi, *s_ji, *s_hint, *s_foot;
+static lv_obj_t *s_scr, *s_av, *s_rank_lbl, *s_yi, *s_ji, *s_hint, *s_foot;
 static lv_obj_t *s_line_l, *s_line_r, *s_dia_l, *s_dia_r;
 static lv_obj_t *s_spark[10];
 static int s_nspark;
-static lv_timer_t *s_batt_timer;
 static bool s_drawn, s_busy;
 static int s_rank, s_yi_i, s_ji_i;
 
@@ -200,23 +199,11 @@ static void shake(int cycles)
     lv_anim_start(&a);
 }
 
-static void batt_tick(lv_timer_t *t)
-{
-    (void)t;
-    int soc = bsp_battery_soc();
-    char buf[16];
-    if (soc < 0) snprintf(buf, sizeof buf, "--%%");
-    else         snprintf(buf, sizeof buf, "%d%%", soc);
-    lv_label_set_text(s_batt, buf);
-}
-
 static void page_enter(void)
 {
     s_scr = page_screen_create();
     s_busy = false; s_nspark = 0;
-    lv_obj_t *t = label(s_scr, "猹好运", &font_fusion12, C_GREEN); lv_obj_set_pos(t, 18, 9);
-    s_batt = label(s_scr, "--%", &font_ps8, C_MUTED); lv_obj_set_pos(s_batt, 198, 9);
-    block(s_scr, 0, 26, 240, 1, C_LINE);
+    ui_topbar(s_scr, "猹好运");
     block(s_scr, 0, 292, 240, 1, C_LINE);
 
     s_av = lv_image_create(s_scr);
@@ -257,21 +244,18 @@ static void page_enter(void)
         layout_rank("今日猹运", C_MUTED);
     }
 
-    s_batt_timer = lv_timer_create(batt_tick, 30000, NULL);
-    batt_tick(NULL);
     lv_screen_load(s_scr);
 }
 
 static void page_exit(void)
 {
-    if (s_batt_timer) { lv_timer_delete(s_batt_timer); s_batt_timer = NULL; }
     if (s_av) lv_anim_delete(s_av, NULL);
     if (s_rank_lbl) lv_anim_delete(s_rank_lbl, NULL);
     if (s_yi) lv_anim_delete(s_yi, NULL);
     if (s_ji) lv_anim_delete(s_ji, NULL);
     clear_sparks();
     if (s_scr) { lv_obj_delete(s_scr); s_scr = NULL; }
-    s_av = s_yi = s_ji = s_hint = s_foot = s_batt = s_line_l = s_line_r = s_dia_l = s_dia_r = NULL;
+    s_av = s_yi = s_ji = s_hint = s_foot = s_line_l = s_line_r = s_dia_l = s_dia_r = NULL;
     s_rank_lbl = NULL;
 }
 

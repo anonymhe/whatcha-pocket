@@ -1,7 +1,7 @@
 // main/pages/page_pomo.c — 番茄猹：番茄钟
 #include "pages.h"
+#include "app_ui.h"
 #include "sfx.h"
-#include "bsp_battery.h"
 #include "esp_timer.h"
 #include <stdio.h>
 
@@ -42,12 +42,12 @@ static const int SEG_LEN[5] = { FR_HALF, FR_H, FR_W, FR_H, FR_HALF };
 
 /* ---- 静态变量 ---- */
 static lv_obj_t *s_scr;
-static lv_obj_t *s_batt_lbl, *s_time_lbl, *s_state_lbl, *s_hint_lbl, *s_dur_lbl;
+static lv_obj_t *s_time_lbl, *s_state_lbl, *s_hint_lbl, *s_dur_lbl;
 static lv_obj_t *s_avatar;
 static lv_obj_t *s_fbg[4];   /* 背景框 4 边 */
 static lv_obj_t *s_fpg[5];   /* 进度前景 5 段 */
 
-static lv_timer_t *s_tick_timer, *s_batt_timer, *s_done_timer, *s_phase2_timer;
+static lv_timer_t *s_tick_timer, *s_done_timer, *s_phase2_timer;
 
 static state_t s_state;
 static int  s_dur_idx;       /* 0/1/2 → 15/25/45 分 */
@@ -81,19 +81,6 @@ static lv_obj_t *mk_rect(lv_obj_t *par, int x, int y, int w, int h, uint32_t c)
 static void hline(lv_obj_t *par, int y)
 {
     mk_rect(par, 0, y, 240, 1, C_LINE);
-}
-
-/* ---- 电量 ---- */
-
-static void batt_tick(lv_timer_t *t)
-{
-    (void)t;
-    if (!s_batt_lbl) return;
-    int soc = bsp_battery_soc();
-    char buf[16];
-    if (soc < 0) snprintf(buf, sizeof buf, "--%%");
-    else         snprintf(buf, sizeof buf, "%d%%", soc);
-    lv_label_set_text(s_batt_lbl, buf);
 }
 
 /* ---- 进度条更新 ---- */
@@ -347,12 +334,7 @@ static void page_enter(void)
     /* 第一阶段：顶栏 + 背景框 + 头像（~10 对象） */
 
     /* 顶栏 */
-    lv_obj_t *title = mk_label(s_scr, "番茄猹", &font_fusion12, C_GREEN);
-    lv_obj_set_pos(title, 18, 9);
-    s_batt_lbl = mk_label(s_scr, "", &font_ps8, C_MUTED);
-    lv_obj_set_pos(s_batt_lbl, 198, 9);
-    batt_tick(NULL);
-    hline(s_scr, 26);
+    ui_topbar(s_scr, "番茄猹");
 
     /* 背景框 4 边（直角） */
     s_fbg[0] = mk_rect(s_scr, FR_X0, FR_Y0,         FR_W, FR_T,  C_LINE); /* 顶 */
@@ -364,9 +346,6 @@ static void page_enter(void)
     s_avatar = lv_image_create(s_scr);
     lv_image_set_src(s_avatar, pomo_img(s_state));
     lv_obj_set_pos(s_avatar, FR_CX - 48, FR_CY - 48);
-
-    /* 电量 timer */
-    s_batt_timer = lv_timer_create(batt_tick, 30000, NULL);
 
     /* 第二阶段：延迟 50ms */
     s_tick_timer   = NULL;
@@ -381,10 +360,9 @@ static void page_exit(void)
 {
     power_keep_awake(false);
     if (s_tick_timer)   { lv_timer_delete(s_tick_timer);   s_tick_timer = NULL; }
-    if (s_batt_timer)   { lv_timer_delete(s_batt_timer);   s_batt_timer = NULL; }
     if (s_done_timer)   { lv_timer_delete(s_done_timer);   s_done_timer = NULL; }
     if (s_phase2_timer) { lv_timer_delete(s_phase2_timer); s_phase2_timer = NULL; }
-    s_batt_lbl = s_time_lbl = s_state_lbl = s_hint_lbl = s_dur_lbl = NULL;
+    s_time_lbl = s_state_lbl = s_hint_lbl = s_dur_lbl = NULL;
     s_avatar = NULL;
     for (int i = 0; i < 4; i++) s_fbg[i] = NULL;
     for (int i = 0; i < 5; i++) s_fpg[i] = NULL;

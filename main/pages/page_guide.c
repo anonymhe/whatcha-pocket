@@ -1,6 +1,7 @@
 // main/pages/page_guide.c —— 使用说明页：概述主页基本玩法 + 固件仓库链接。
 // 长按确认返回首页（由 pages.c 统一拦截）；上/下键滚动正文。
 #include "pages.h"
+#include "app_ui.h"
 #include "sfx.h"
 #include "lvgl.h"
 
@@ -43,9 +44,7 @@ static void page_enter(void)
     s_scr = page_screen_create();
 
     // 顶栏
-    lv_obj_t *tl = mk_label(s_scr, "使用说明", &font_fusion12, C_GREEN);
-    lv_obj_set_pos(tl, 18, 9);
-    hline(s_scr, 26);
+    ui_topbar(s_scr, "使用说明");
 
     // 正文：可滚动容器，纵向 flex 排版
     s_body = lv_obj_create(s_scr);

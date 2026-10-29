@@ -1,8 +1,8 @@
 // main/pages/page_type.c — 什么猹: AI人格测试
 #include "pages.h"
+#include "app_ui.h"
 #include "sfx.h"
 #include "storage.h"
-#include "bsp_battery.h"
 #include <stdio.h>
 
 LV_FONT_DECLARE(font_fusion12);
@@ -69,8 +69,6 @@ static const ritem_t RESULTS[16] = {
 
 /* ---- 静态变量 ---- */
 static lv_obj_t *s_scr;
-static lv_obj_t *s_batt_lbl;
-static lv_timer_t *s_batt_timer;
 
 static state_t s_state;
 static int s_q_idx;            /* 当前题号 0-7 */
@@ -106,17 +104,6 @@ static void hline(lv_obj_t *par, int y)
     mk_rect(par, 0, y, 240, 1, C_LINE);
 }
 
-static void batt_tick(lv_timer_t *t)
-{
-    (void)t;
-    if (!s_batt_lbl) return;
-    int soc = bsp_battery_soc();
-    char buf[16];
-    if (soc < 0) snprintf(buf, sizeof buf, "--%%");
-    else         snprintf(buf, sizeof buf, "%d%%", soc);
-    lv_label_set_text(s_batt_lbl, buf);
-}
-
 /* ---- 计算结果 ---- */
 
 static int calc_result(void)
@@ -135,12 +122,7 @@ static int calc_result(void)
 
 static void draw_topbar(void)
 {
-    lv_obj_t *t = mk_label(s_scr, "什么猹", &font_fusion12, C_GREEN);
-    lv_obj_set_pos(t, 18, 9);
-    s_batt_lbl = mk_label(s_scr, "", &font_ps8, C_MUTED);
-    lv_obj_set_pos(s_batt_lbl, 198, 9);
-    batt_tick(NULL);
-    hline(s_scr, 26);
+    ui_topbar(s_scr, "什么猹");
 }
 
 static void draw_bottom(const char *txt)
@@ -283,15 +265,12 @@ static void page_enter(void)
     s_q_idx = 0;
     for (int i = 0; i < 8; i++) s_answers[i] = 0;
 
-    s_batt_timer = lv_timer_create(batt_tick, 30000, NULL);
     enter_state(ST_QUESTION);
     lv_screen_load(s_scr);
 }
 
 static void page_exit(void)
 {
-    if (s_batt_timer) { lv_timer_delete(s_batt_timer); s_batt_timer = NULL; }
-    s_batt_lbl = NULL;
     if (s_scr) { lv_obj_delete(s_scr); s_scr = NULL; }
 }
 
