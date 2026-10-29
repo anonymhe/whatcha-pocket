@@ -13,6 +13,7 @@ docs/                  product, contribution, development, and design documents
 components/bsp/        stable board APIs and hardware implementation
 main/                  device firmware: pages.c router plus feature pages
 main/apps/             community apps, registered in apps.c
+main/pages/            feature pages (page_*.c), routed by pages.c
 main/assets/           generated LVGL C sources: images/ and fonts/
 assets/                editable source material: fonts, images, music, sound effects
 skills/                reusable AI-agent skills

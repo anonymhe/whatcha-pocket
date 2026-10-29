@@ -31,7 +31,8 @@ If a task requires a board revision, wiring, polarity, register value, or GPIO a
 
 ```text
 requirement
-  ├─ main/                          pages, state machines, animation, app tasks
+  ├─ main/                          router, state machines, animation, app tasks
+  │   ├─ pages/                     feature pages (pages.c PAGES[])
   │   ├─ apps/                      community apps (apps.c APPS[])
   │   └─ assets/                    generated LVGL C sources: images/, fonts/
   └─ components/bsp/include/        stable board APIs
@@ -39,7 +40,7 @@ requirement
           └─ bsp_pins.h             pin and hardware-parameter source of truth
 ```
 
-A new page implements the `enter`, `exit`, and `key` interface in `main/page_<feature>.c`, is added to `main/CMakeLists.txt`, and registers its `page_t` in `pages.c`'s `PAGES[]` (community apps instead live in `main/apps/` and register in `apps.c`'s `APPS[]`). Extend failure degradation for new optional peripherals.
+A new page implements the `enter`, `exit`, and `key` interface in `main/pages/page_<feature>.c`, is added to `main/CMakeLists.txt`, and registers its `page_t` in `main/pages.c`'s `PAGES[]` (community apps instead live in `main/apps/` and register in `apps.c`'s `APPS[]`). Extend failure degradation for new optional peripherals.
 
 `main/` keeps code only. The C arrays generated from artwork and typefaces live in `main/assets/images/` (`art_*`, `ic_*`, `cha_*`, `logo*`, globbed by the component) and `main/assets/fonts/` (`font_*`, listed one by one in the component so Flash stays under budget); their editable sources belong in the repository-root `assets/`.
 

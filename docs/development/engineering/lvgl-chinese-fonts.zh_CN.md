@@ -13,7 +13,7 @@
 | 字体 | 声明处 | 覆盖 | 用途 |
 | --- | --- | --- | --- |
 | `font_fusion12` | `main/*.c` 内 `LV_FONT_DECLARE`（如 [`main/pages.c`](../../../main/pages.c)） | 完整 GB2312（约 7,300 汉字，外加界面所需的符号与昵称异体字）加 ASCII，12 px 像素风 | 所有中文 UI 正文 |
-| `font_fusion20` | [`main/page_home.c`](../../../main/page_home.c)、[`main/page_fortune.c`](../../../main/page_fortune.c)、[`main/page_type.c`](../../../main/page_type.c)、[`main/page_guide.c`](../../../main/page_guide.c) | 约 690 字的标题子集，20 px 像素风（10 px 原生设计的精确 2 倍） | 仅用于标题/名称/结果文案，且只能用子集内的字 |
+| `font_fusion20` | [`main/pages/page_home.c`](../../../main/pages/page_home.c)、[`main/pages/page_fortune.c`](../../../main/pages/page_fortune.c)、[`main/pages/page_type.c`](../../../main/pages/page_type.c)、[`main/pages/page_guide.c`](../../../main/pages/page_guide.c) | 约 690 字的标题子集，20 px 像素风（10 px 原生设计的精确 2 倍） | 仅用于标题/名称/结果文案，且只能用子集内的字 |
 | `font_fusion10` | 文件在磁盘上（`main/assets/fonts/font_fusion10.c`）但未编译（作为源保留以省 Flash） | 完整 GB2312 加 ASCII，10 px | 目前无；仅当某页面需要更小正文字号时才加回 `main/CMakeLists.txt` 的 `WATCHA_FONT_SRCS` 列表 |
 | `font_ps8` / `font_ps16` | `main/apps/app_ui.h` | 只有 ASCII（数字、拉丁字母），8/16 px 像素风 | 分数、计时、数字读数 |
 

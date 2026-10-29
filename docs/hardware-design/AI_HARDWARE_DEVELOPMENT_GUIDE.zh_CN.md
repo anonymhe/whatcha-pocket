@@ -249,7 +249,7 @@ SOC 准确度取决于电芯与 profile 的匹配程度。本驱动给出的是�
 
 新增页面：
 
-1. 创建 `main/page_<feature>.c`，实现 `enter`、`exit`、`key`，并导出一个 `const page_t`。
+1. 创建 `main/pages/page_<feature>.c`，实现 `enter`、`exit`、`key`，并导出一个 `const page_t`。
 2. 在 `main/CMakeLists.txt` 加源文件，在 `main/pages.c` 的 `PAGES[]` 注册。
 3. `enter` 创建并加载自己的 screen；`exit` 先停任务/定时器，再删 screen 和清空指针。
 4. 说明性注释可用中文。

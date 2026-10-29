@@ -181,7 +181,7 @@ Review at least the 24 KB LVGL pool, 9.6 KB LCD DMA buffer, I2S DMA, the NimBLE 
 
 For reusable hardware capability, add `bsp_<feature>.h` and its implementation, keep constants in `bsp_pins.h`, update component CMake/dependencies, return `esp_err_t`, log actionable pin/address context, and document threading, blocking, ownership, initialization, and failure behavior.
 
-For a new page, implement `enter`, `exit`, and `key` in a `page_<feature>.c` under `main/`, declare the `page_t` instance in `main/pages.h`-style headers or register it in `pages.c`'s `PAGES[]` table (community apps register in `main/apps/apps.c` instead and live in `main/apps/`). Create/load a page-owned screen on entry. Stop workers/timers before deleting it on exit. Keep slow work in worker tasks, lock LVGL updates, and preserve global OK-long-press return behavior.
+For a new page, implement `enter`, `exit`, and `key` in a `page_<feature>.c` under `main/pages/`, declare the `page_t` instance in `main/pages.h`-style headers or register it in `main/pages.c`'s `PAGES[]` table (community apps register in `main/apps/apps.c` instead and live in `main/apps/`). Create/load a page-owned screen on entry. Stop workers/timers before deleting it on exit. Keep slow work in worker tasks, lock LVGL updates, and preserve global OK-long-press return behavior.
 
 ## 12. Development environment
 

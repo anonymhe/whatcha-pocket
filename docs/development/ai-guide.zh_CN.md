@@ -36,7 +36,8 @@
 
 ```text
 Natural-language requirement
-  ├─ main/                          页面、状态机、动画、应用任务
+  ├─ main/                          路由、状态机、动画、应用任务
+  │   ├─ pages/                     功能页（pages.c 的 PAGES[]）
   │   ├─ apps/                      二创玩法（apps.c 的 APPS[]）
   │   └─ assets/                    生成的 LVGL C 源：images/、fonts/
   └─ components/bsp/include/        稳定的板级 API
@@ -44,7 +45,7 @@ Natural-language requirement
           └─ bsp_pins.h             引脚与硬件参数的唯一来源
 ```
 
-新增普通页面时，创建 `main/page_<feature>.c` 并实现 `enter`、`exit`、`key` 接口，然后同步修改：
+新增普通页面时，创建 `main/pages/page_<feature>.c` 并实现 `enter`、`exit`、`key` 接口，然后同步修改：
 
 - `main/CMakeLists.txt` 中的源文件；
 - `main/pages.c` 的 `PAGES[]` 注册（二创玩法例外：放 `main/apps/` 并在 `apps.c` 的 `APPS[]` 注册）；

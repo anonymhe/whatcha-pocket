@@ -13,7 +13,7 @@ Unlike the upstream baseline, this firmware does **not** rely on Montserrat or o
 | Font | Declared in | Covers | Use for |
 | --- | --- | --- | --- |
 | `font_fusion12` | `main/*.c` via `LV_FONT_DECLARE` (e.g. [`main/pages.c`](../../../main/pages.c)) | Full GB2312 (~7,300 Chinese characters plus the symbols and nickname variants the UI needs) plus ASCII, 12 px pixel style | All Chinese UI body text |
-| `font_fusion20` | [`main/page_home.c`](../../../main/page_home.c), [`main/page_fortune.c`](../../../main/page_fortune.c), [`main/page_type.c`](../../../main/page_type.c), [`main/page_guide.c`](../../../main/page_guide.c) | A ~690-character headline subset, 20 px pixel style (an exact 2× of the 10 px artwork) | Headline/name/result text only, and only characters inside the subset |
+| `font_fusion20` | [`main/pages/page_home.c`](../../../main/pages/page_home.c), [`main/pages/page_fortune.c`](../../../main/pages/page_fortune.c), [`main/pages/page_type.c`](../../../main/pages/page_type.c), [`main/pages/page_guide.c`](../../../main/pages/page_guide.c) | A ~690-character headline subset, 20 px pixel style (an exact 2× of the 10 px artwork) | Headline/name/result text only, and only characters inside the subset |
 | `font_fusion10` | On disk (`main/assets/fonts/font_fusion10.c`) but not compiled (kept as source to save Flash) | Full GB2312 plus ASCII, 10 px | None today; re-add it to the `WATCHA_FONT_SRCS` list in `main/CMakeLists.txt` only if a page needs a smaller body size |
 | `font_ps8` / `font_ps16` | `main/apps/app_ui.h` | ASCII only (digits, Latin), 8/16 px pixel style | Scores, timers, numeric readouts |
 

@@ -6,6 +6,8 @@
 
 ## Unreleased
 
+- Split the firmware's page sources into `main/pages/`, leaving the router, entry point, shared services, and generated data where they were, so the component root now lists what it is instead of eleven `page_*` files in the middle of it. Behavior, includes, and the `PAGES[]` registry are unchanged, and the doc references that name a page follow the move.
+
 - Reorganized the repository so code and generated data no longer share one flat folder: the LVGL C arrays generated from artwork and typefaces moved from the root of the firmware component into `main/assets/images/` and `main/assets/fonts/`, and the source typefaces moved from `assets/font/` to `assets/fonts/`. The image directory compiles as a whole, the font list stays explicit so Flash stays under budget, and the work-in-progress sources remain in `assets/`. Contributor and AI-facing documents, the font generator, and the asset-reference check follow the new layout.
 
 - Moved the sync screen's remaining-time countdown onto its own line, shown in the pixel digit font the other numeric readouts use. Keeping it inside the Bluetooth status sentence made the numbers look like a different, smaller typeface next to the Chinese text.
