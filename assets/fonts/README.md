@@ -16,13 +16,17 @@ Family: Fusion Pixel Font (monospaced). License: SIL Open Font License 1.1
 
 ## Generated fonts
 
-`tools/gen_fonts.py` converts these TTFs into the LVGL C sources under `main/`:
+`tools/gen_fonts.py` converts these TTFs into the LVGL C sources under
+`main/assets/fonts/`:
 
 - `font_fusion10.c` (`font_fusion10`): GB2312 + UI symbols, 10 px body text.
-  Checked in but not built by default; add it back to `main/CMakeLists.txt`
-  (and declare it) before using, since it is a large source.
+  Checked in but not built by default; add it back to the `WATCHA_FONT_SRCS`
+  list in `main/CMakeLists.txt` (and declare it) before using, since it is a
+  large source.
 - `font_fusion12.c` (`font_fusion12`): GB2312 + UI symbols, 12 px body text.
 - `font_fusion20.c` (`font_fusion20`): headline subset, 20 px (10 px face at 2x).
+- `font_ps8.c` / `font_ps16.c`: ASCII-only pixel faces (Press Start 2P), added
+  by hand rather than by the generator.
 
 ASCII is taken from the latin face and CJK from the zh_hans face; the generator
 drops any glyph the face does not carry. It also rewrites

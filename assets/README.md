@@ -10,16 +10,22 @@ Keep each asset in the matching subdirectory and document its destination, namin
 
 ## Fonts
 
-Store reusable font files and generated font sources in `fonts/`.
+Store reusable font files in `fonts/`.
 
 - Use descriptive names that include the family, weight, size, and format when relevant.
 - Document the source, license, character range, conversion command, and expected destination.
 - Check Flash and internal-RAM impact before adding a font; the ESP32-C3 has no PSRAM.
 - Do not commit fonts whose license does not permit redistribution.
 
+The C sources generated from those typefaces are firmware code, so they live in the
+`main` component instead: `tools/gen_fonts.py` writes `main/assets/fonts/font_*.c`
+(`main/assets/images/` holds the equivalent LVGL image sources). Keeping the binaries
+here and the generated code there means a font or image change never sits in the same
+directory as the code that draws it.
+
 ## Images
 
-Store reusable source images and generated display assets in `images/`.
+Store reusable source images in `images/`.
 
 - Use descriptive names and document dimensions, pixel format, conversion steps, and destination.
 - Prefer formats suitable for the 240 × 320 RGB565 display and account for Flash and internal RAM.
