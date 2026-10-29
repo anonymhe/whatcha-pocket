@@ -77,7 +77,7 @@ def main():
     paths = sys.argv[1:]
     if not paths:
         paths = []
-        for d in (MAIN, os.path.join(MAIN, 'apps')):
+        for d in (MAIN, os.path.join(MAIN, 'apps'), os.path.join(MAIN, 'pages')):
             if os.path.isdir(d):
                 paths += [os.path.join(d, f) for f in sorted(os.listdir(d))
                           if f.endswith('.c') and not f.startswith('font_')]

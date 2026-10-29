@@ -1,4 +1,4 @@
-// main/page_home.c —— 观猹首页（按 mock v14 布局）；身份区读蓝牙同步的资料
+// main/pages/page_home.c —— 观猹首页（按 mock v14 布局）；身份区读蓝牙同步的资料
 #include "pages.h"
 #include "sfx.h"
 #include "storage.h"

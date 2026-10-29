@@ -1,4 +1,4 @@
-// main/page_guide.c —— 使用说明页：概述主页基本玩法 + 固件仓库链接。
+// main/pages/page_guide.c —— 使用说明页：概述主页基本玩法 + 固件仓库链接。
 // 长按确认返回首页（由 pages.c 统一拦截）；上/下键滚动正文。
 #include "pages.h"
 #include "sfx.h"

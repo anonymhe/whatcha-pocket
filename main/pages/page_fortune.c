@@ -1,4 +1,4 @@
-// main/page_fortune.c —— 猹好运：一天一签（无时间时按开机次数）
+// main/pages/page_fortune.c —— 猹好运：一天一签（无时间时按开机次数）
 #include "pages.h"
 #include "storage.h"
 #include "sfx.h"

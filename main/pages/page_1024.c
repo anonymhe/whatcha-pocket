@@ -1,4 +1,4 @@
-// main/page_1024.c — 1024(2048) 合成游戏
+// main/pages/page_1024.c — 1024(2048) 合成游戏
 #include "pages.h"
 #include "storage.h"
 #include "sfx.h"

@@ -54,9 +54,10 @@ def srcs_listed():
 
 
 def c_sources():
-    """main/、main/apps/ 与 main/assets/ 下所有 .c/.h。"""
+    """main/、main/apps/、main/pages/ 与 main/assets/ 下所有 .c/.h。"""
     paths = []
-    for d in (MAIN, os.path.join(MAIN, 'apps'), IMAGE_DIR, FONT_DIR):
+    for d in (MAIN, os.path.join(MAIN, 'apps'), os.path.join(MAIN, 'pages'),
+              IMAGE_DIR, FONT_DIR):
         if os.path.isdir(d):
             paths += [os.path.join(d, f) for f in sorted(os.listdir(d))
                       if f.endswith(('.c', '.h'))]

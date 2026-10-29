@@ -14,26 +14,26 @@ set(WATCHA_FONT_SRCS
 
 idf_component_register(
     SRCS "main.c"
-         "page_lab.c"
+         "pages.c"
+         "pages/page_lab.c"
+         "pages/page_home.c"
+         "pages/page_fortune.c"
+         "pages/page_pomo.c"
+         "pages/page_type.c"
+         "pages/page_intro.c"
+         "pages/page_sync.c"
+         "pages/page_guide.c"
+         "pages/page_melon.c"
+         "pages/page_muyu.c"
+         "pages/page_1024.c"
          ${WATCHA_APP_SRCS}
          ${WATCHA_IMAGE_SRCS}
          ${WATCHA_FONT_SRCS}
          "boot_anim.c"
-         "page_home.c"
          "cha_pool.c"
-         "pages.c"
          "storage.c"
          "ble_sync.c"
          "sfx.c"
-         "page_fortune.c"
-         "page_pomo.c"
-         "page_type.c"
-         "page_intro.c"
-         "page_sync.c"
-         "page_guide.c"
-         "page_melon.c"
-         "page_muyu.c"
-         "page_1024.c"
     INCLUDE_DIRS "." "apps"
     REQUIRES bsp esp_timer nvs_flash bt json
 )

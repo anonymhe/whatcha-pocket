@@ -1,4 +1,4 @@
-// main/page_type.c — 什么猹: AI人格测试
+// main/pages/page_type.c — 什么猹: AI人格测试
 #include "pages.h"
 #include "sfx.h"
 #include "storage.h"

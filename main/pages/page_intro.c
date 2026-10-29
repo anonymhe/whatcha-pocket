@@ -1,4 +1,4 @@
-// main/page_intro.c — 通用功能说明页
+// main/pages/page_intro.c — 通用功能说明页
 #include "pages.h"
 #include "storage.h"
 #include "sfx.h"

@@ -1,4 +1,4 @@
-// main/page_melon.c — 吃瓜猹：反应测试
+// main/pages/page_melon.c — 吃瓜猹：反应测试
 #include "pages.h"
 #include "storage.h"
 #include "sfx.h"

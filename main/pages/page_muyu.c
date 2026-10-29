@@ -1,4 +1,4 @@
-// main/page_muyu.c —— 木鱼猹：按确认摸猹，功德 +1
+// main/pages/page_muyu.c —— 木鱼猹：按确认摸猹，功德 +1
 #include "pages.h"
 #include "storage.h"
 #include "sfx.h"

@@ -1,4 +1,4 @@
-// main/page_lab.c —— 口袋上新：二创玩法列表（首页长按 ▲ 进入；在玩法里长按确认回到这里）
+// main/pages/page_lab.c —— 口袋上新：二创玩法列表（首页长按 ▲ 进入；在玩法里长按确认回到这里）
 #include "pages.h"
 #include "sfx.h"
 #include "apps.h"

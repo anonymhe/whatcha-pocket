@@ -1,4 +1,4 @@
-// main/page_pomo.c — 番茄猹：番茄钟
+// main/pages/page_pomo.c — 番茄猹：番茄钟
 #include "pages.h"
 #include "sfx.h"
 #include "bsp_battery.h"
