@@ -20,7 +20,8 @@ docs/
   fork-guide.md               本文档：fork 工作流与约定
 components/bsp/               板级支持包：显示、按键、音频、电池、I2C（稳定 API 与 bsp_pins.h 硬件事实）
 main/                         设备固件应用：pages.c 页面路由 + 各功能页 page_*.c（新页面导出 page_t 并注册进 PAGES[]；二创玩法放 main/apps/）
-assets/                       预置资源：fonts/ images/ music/（各含 README.md）
+main/assets/                  生成的 LVGL C 源：images/（art_* ic_* cha_* logo*）与 fonts/（font_*）
+assets/                       可编辑源素材：fonts/ images/ music/
 skills/                       可复用技能目录（每个 skill 独立子目录）
 tests/                        轻量级逻辑测试（无硬件可运行）
 sdkconfig.defaults            ESP32-C3、USB console、Flash、LVGL 默认配置

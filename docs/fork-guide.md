@@ -12,7 +12,9 @@ The upstream repository keeps `main` as the current FoloToy baseline. Fork-speci
 docs/                  product, contribution, development, and design documents
 components/bsp/        stable board APIs and hardware implementation
 main/                  device firmware: pages.c router plus feature pages
-assets/                reusable fonts, images, music, and sound effects
+main/apps/             community apps, registered in apps.c
+main/assets/           generated LVGL C sources: images/ and fonts/
+assets/                editable source material: fonts, images, music, sound effects
 skills/                reusable AI-agent skills
 tests/                 host-runnable logic tests
 sdkconfig.defaults     reproducible ESP32-C3 defaults

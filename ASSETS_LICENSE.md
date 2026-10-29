@@ -10,14 +10,14 @@ https://creativecommons.org/licenses/by-nc/4.0/deed.zh-hans
 
 **适用范围**（含对应的源图与由其生成的 C 数组）：
 
-- `main/cha_*.c`：小猹形象
-- `main/art_*.c`：玩法插画
-- `main/ic_*.c`：首页图标
+- `main/assets/images/cha_*.c`：小猹形象
+- `main/assets/images/art_*.c`：玩法插画
+- `main/assets/images/ic_*.c`：首页图标
 - `main/boot_anim.c` 中的开机动画画面
 
 **不在授权范围内：**
 
-- 「观猹」「WATCHA」「WATCHA POCKET」名称，以及 `main/logo32_watcha.c` 等观猹标识。
+- 「观猹」「WATCHA」「WATCHA POCKET」名称，以及 `main/assets/images/logo32_watcha.c` 等观猹标识。
 - 第三方字体以其各自的协议为准。
 
 代码部分采用 MIT 协议，见 [`LICENSE`](LICENSE)。
@@ -26,8 +26,8 @@ https://creativecommons.org/licenses/by-nc/4.0/deed.zh-hans
 
 The cha characters and other artwork created by Watcha in this repository are licensed under **Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)**: https://creativecommons.org/licenses/by-nc/4.0/
 
-Covered: `main/cha_*.c`, `main/art_*.c`, `main/ic_*.c` and the boot animation frames in `main/boot_anim.c`, together with their source images.
+Covered: `main/assets/images/cha_*.c`, `main/assets/images/art_*.c`, `main/assets/images/ic_*.c` and the boot animation frames in `main/boot_anim.c`, together with their source images.
 
-Not covered: the Watcha / 观猹 / WATCHA POCKET names and logos (including `main/logo32_watcha.c`), and third-party fonts, which keep their own licenses.
+Not covered: the Watcha / 观猹 / WATCHA POCKET names and logos (including `main/assets/images/logo32_watcha.c`), and third-party fonts, which keep their own licenses.
 
 Source code is MIT-licensed; see [`LICENSE`](LICENSE).

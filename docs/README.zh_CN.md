@@ -95,6 +95,9 @@ git switch -c feature/my-passport-app
 components/bsp/include/  BSP 公开 API 与 bsp_pins.h 硬件事实
 components/bsp/src/      显示、按键、音频、电池、共享 I2C 实现
 main/                    最小菜单、LVGL UI 与独立硬件演示页
+main/apps/               二创玩法（自动编译，在 apps.c 注册）
+main/assets/             生成的 LVGL C 源：images/（美术、图标）与 fonts/
+assets/                  可编辑源素材：fonts/、images/、music/
 tests/                   可脱离硬件运行的轻量逻辑测试源
 tools/                   本地与 CI 共用的验证及固件校验脚本
 docs/                    项目说明、变更记录、工程/协作规范与设计参考

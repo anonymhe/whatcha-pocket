@@ -31,13 +31,17 @@ If a task requires a board revision, wiring, polarity, register value, or GPIO a
 
 ```text
 requirement
-  └─ main/                         pages, state machines, animation, app tasks, assets
-      └─ components/bsp/include/  stable board APIs
-          └─ components/bsp/src/  buses, devices, and driver details
-              └─ bsp_pins.h       pin and hardware-parameter source of truth
+  ├─ main/                          pages, state machines, animation, app tasks
+  │   ├─ apps/                      community apps (apps.c APPS[])
+  │   └─ assets/                    generated LVGL C sources: images/, fonts/
+  └─ components/bsp/include/        stable board APIs
+      └─ components/bsp/src/        buses, devices, and driver details
+          └─ bsp_pins.h             pin and hardware-parameter source of truth
 ```
 
 A new page implements the `enter`, `exit`, and `key` interface in `main/page_<feature>.c`, is added to `main/CMakeLists.txt`, and registers its `page_t` in `pages.c`'s `PAGES[]` (community apps instead live in `main/apps/` and register in `apps.c`'s `APPS[]`). Extend failure degradation for new optional peripherals.
+
+`main/` keeps code only. The C arrays generated from artwork and typefaces live in `main/assets/images/` (`art_*`, `ic_*`, `cha_*`, `logo*`, globbed by the component) and `main/assets/fonts/` (`font_*`, listed one by one in the component so Flash stays under budget); their editable sources belong in the repository-root `assets/`.
 
 Only reusable hardware capabilities belong in the BSP. Document blocking behavior, task context, ownership, failures, and initialization order. Pins and I2C addresses belong only in `bsp_pins.h`.
 

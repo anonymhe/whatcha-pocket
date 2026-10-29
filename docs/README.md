@@ -97,6 +97,9 @@ Example branches may change the same menu, configuration, or driver in incompati
 components/bsp/include/  Public BSP APIs and bsp_pins.h hardware facts
 components/bsp/src/      Display, button, audio, battery, and shared-I2C implementations
 main/                    Minimal menu, LVGL UI, and independent hardware demo pages
+main/apps/               Community apps (compiled automatically, registered in apps.c)
+main/assets/             Generated LVGL C sources: images/ (artwork, icons) and fonts/
+assets/                  Editable source material: fonts/, images/, music/
 tests/                   Lightweight logic tests that can run without hardware
 tools/                   Shared local/CI validation and firmware verification scripts
 docs/                    Project docs, changelog, engineering/contribution rules, and design references

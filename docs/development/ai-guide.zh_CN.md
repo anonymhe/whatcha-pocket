@@ -36,10 +36,12 @@
 
 ```text
 Natural-language requirement
-  └─ main/                         Pages, state machines, animation, app tasks, assets
-      └─ components/bsp/include/  Stable board-level APIs
-          └─ components/bsp/src/  GPIO, buses, devices, and driver details
-              └─ bsp_pins.h       Single source of truth for pins and hardware parameters
+  ├─ main/                          页面、状态机、动画、应用任务
+  │   ├─ apps/                      二创玩法（apps.c 的 APPS[]）
+  │   └─ assets/                    生成的 LVGL C 源：images/、fonts/
+  └─ components/bsp/include/        稳定的板级 API
+      └─ components/bsp/src/        GPIO、总线、器件与驱动细节
+          └─ bsp_pins.h             引脚与硬件参数的唯一来源
 ```
 
 新增普通页面时，创建 `main/page_<feature>.c` 并实现 `enter`、`exit`、`key` 接口，然后同步修改：
@@ -47,6 +49,8 @@ Natural-language requirement
 - `main/CMakeLists.txt` 中的源文件；
 - `main/pages.c` 的 `PAGES[]` 注册（二创玩法例外：放 `main/apps/` 并在 `apps.c` 的 `APPS[]` 注册）；
 - 若有新的可选外设，页面初始化与失败降级。
+
+`main/` 只放代码。由美术素材与字库生成的 C 数组放在 `main/assets/images/`（`art_*`、`ic_*`、`cha_*`、`logo*`，组件内整目录编译）与 `main/assets/fonts/`（`font_*`，在组件里逐个列出以守住 Flash 预算）；它们的可编辑源文件放在仓库根目录的 `assets/`。
 
 只有多个应用都会使用的硬件能力才进入 `components/bsp`。BSP API 需要说明阻塞性、线程上下文、内存所有权、失败值和初始化顺序；引脚或 I2C 地址只能加入 `bsp_pins.h`。
 

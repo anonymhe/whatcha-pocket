@@ -14,10 +14,10 @@
 | --- | --- | --- | --- |
 | `font_fusion12` | `main/*.c` 内 `LV_FONT_DECLARE`（如 [`main/pages.c`](../../../main/pages.c)） | 完整 GB2312（约 7,300 汉字，外加界面所需的符号与昵称异体字）加 ASCII，12 px 像素风 | 所有中文 UI 正文 |
 | `font_fusion20` | [`main/page_home.c`](../../../main/page_home.c)、[`main/page_fortune.c`](../../../main/page_fortune.c)、[`main/page_type.c`](../../../main/page_type.c)、[`main/page_guide.c`](../../../main/page_guide.c) | 约 690 字的标题子集，20 px 像素风（10 px 原生设计的精确 2 倍） | 仅用于标题/名称/结果文案，且只能用子集内的字 |
-| `font_fusion10` | 文件在磁盘但未编译（作为源保留以省 Flash） | 完整 GB2312 加 ASCII，10 px | 目前无；仅当某页面需要更小正文字号时才加回 `main/CMakeLists.txt` |
+| `font_fusion10` | 文件在磁盘上（`main/assets/fonts/font_fusion10.c`）但未编译（作为源保留以省 Flash） | 完整 GB2312 加 ASCII，10 px | 目前无；仅当某页面需要更小正文字号时才加回 `main/CMakeLists.txt` 的 `WATCHA_FONT_SRCS` 列表 |
 | `font_ps8` / `font_ps16` | `main/apps/app_ui.h` | 只有 ASCII（数字、拉丁字母），8/16 px 像素风 | 分数、计时、数字读数 |
 
-`font_fusion*` 由 [`tools/gen_fonts.py`](../../../tools/gen_fonts.py) 从 [`assets/font/`](../../../assets/font/) 下的缝合像素 TTF 重建：`font_fusion12` 来自 12 px 字面，`font_fusion10` / `font_fusion20` 来自 10 px 字面（20 px 标题是 10 px 设计的精确 2 倍，故保持清晰）。标题字为省 Flash 只收录一小撮子集。`font_fusion12` 的正文覆盖以可读清单列在 [`docs/watcha/fusion12_chars.txt`](../../watcha/fusion12_chars.txt)；标题子集列在 [`docs/watcha/fusion20_chars.txt`](../../watcha/fusion20_chars.txt)。[`sdkconfig.defaults`](../../../sdkconfig.defaults) 启用了 `CONFIG_LV_FONT_UNSCII_8` 与 `CONFIG_LV_FONT_UNSCII_16` 作为 ASCII 像素兜底；Montserrat 默认字体不含中文字形，这里不是显示字体。
+生成的字体源位于 [`main/assets/fonts/`](../../../main/assets/fonts/)，与 [`main/assets/images/`](../../../main/assets/images/) 下的 LVGL 图片源并列；可编辑的 TTF 输入仍留在 `assets/`。`font_fusion*` 由 [`tools/gen_fonts.py`](../../../tools/gen_fonts.py) 从 [`assets/fonts/`](../../../assets/fonts/) 下的缝合像素 TTF 重建：`font_fusion12` 来自 12 px 字面，`font_fusion10` / `font_fusion20` 来自 10 px 字面（20 px 标题是 10 px 设计的精确 2 倍，故保持清晰）。标题字为省 Flash 只收录一小撮子集。`font_fusion12` 的正文覆盖以可读清单列在 [`docs/watcha/fusion12_chars.txt`](../../watcha/fusion12_chars.txt)；标题子集列在 [`docs/watcha/fusion20_chars.txt`](../../watcha/fusion20_chars.txt)。[`sdkconfig.defaults`](../../../sdkconfig.defaults) 启用了 `CONFIG_LV_FONT_UNSCII_8` 与 `CONFIG_LV_FONT_UNSCII_16` 作为 ASCII 像素兜底；Montserrat 默认字体不含中文字形，这里不是显示字体。
 
 由于 `font_fusion20` 只收录子集，一个字可能在 `font_fusion12` 里有、用 20 px 画却是方块。凡用 `font_fusion20` 渲染的文本（标题、`page_type.c` 的结果表、`page_fortune.c` 的运势标题与签名、以及首页的同步昵称）都必须停留在该子集内。下文的字形门禁会按字体、按行强制这一点。
 
@@ -107,7 +107,7 @@ bool app_font_has_glyph(const lv_font_t *font, uint32_t codepoint)
 
 ## 7. 最后手段：添加或重新生成字体
 
-仅用于维护者有意扩充已内置的字体（例如给正文或标题字集加字），不用于应用开发——应用开发必须停留在现有覆盖范围内。三套字体由同一个可复现脚本 [`tools/gen_fonts.py`](../../../tools/gen_fonts.py) 重建，它用固定版本的 [`lv_font_conv`](https://github.com/lvgl/lv_font_conv)（经 `npx`）处理 [`assets/font/`](../../../assets/font/) 下的缝合像素 TTF。不要为内置字体手动跑 `lv_font_conv`；改输入后重跑脚本，让每套字体及其覆盖清单保持一致：
+仅用于维护者有意扩充已内置的字体（例如给正文或标题字集加字），不用于应用开发——应用开发必须停留在现有覆盖范围内。三套字体由同一个可复现脚本 [`tools/gen_fonts.py`](../../../tools/gen_fonts.py) 重建，它用固定版本的 [`lv_font_conv`](https://github.com/lvgl/lv_font_conv)（经 `npx`）处理 [`assets/fonts/`](../../../assets/fonts/) 下的缝合像素 TTF。不要为内置字体手动跑 `lv_font_conv`；改输入后重跑脚本，让每套字体及其覆盖清单保持一致：
 
 ```bash
 python3 tools/gen_fonts.py   # 重建 font_fusion10/12/20 与 fusion12_chars.txt
@@ -121,7 +121,7 @@ python3 tools/gen_fonts.py   # 重建 font_fusion10/12/20 与 fusion12_chars.txt
 
 ### 源字体与许可
 
-字体生成自 TakWolf 的[缝合像素字体（Fusion Pixel Font）](https://github.com/TakWolf/fusion-pixel-font)，一套泛中日韩像素字体，以 [SIL 开放字体许可证 1.1](https://openfontlicense.org/)（`OFL-1.1`）发布。该项目原生提供多个字号；本固件使用等宽 10 px 与 12 px 的 zh_hans、latin 字面（在 [`assets/font/`](../../../assets/font/)）。12 px 是原生字号，所以 `font_fusion12` 显示清晰；`font_fusion20` 是原生 10 px 设计的精确 2 倍，同样清晰。OFL-1.1 允许把生成的位图嵌入本固件；请保留许可声明，不要单独售卖字体文件。若从上游更新版重新生成，请在字体源旁记录发布版本（按日期编号，如 `2026.10.25`）。
+字体生成自 TakWolf 的[缝合像素字体（Fusion Pixel Font）](https://github.com/TakWolf/fusion-pixel-font)，一套泛中日韩像素字体，以 [SIL 开放字体许可证 1.1](https://openfontlicense.org/)（`OFL-1.1`）发布。该项目原生提供多个字号；本固件使用等宽 10 px 与 12 px 的 zh_hans、latin 字面（在 [`assets/fonts/`](../../../assets/fonts/)）。12 px 是原生字号，所以 `font_fusion12` 显示清晰；`font_fusion20` 是原生 10 px 设计的精确 2 倍，同样清晰。OFL-1.1 允许把生成的位图嵌入本固件；请保留许可声明，不要单独售卖字体文件。若从上游更新版重新生成，请在字体源旁记录发布版本（按日期编号，如 `2026.10.25`）。
 
 ## 8. 验证与交付边界
 

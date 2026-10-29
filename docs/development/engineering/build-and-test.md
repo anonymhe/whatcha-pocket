@@ -63,7 +63,7 @@ python3 tools/check_material.py   # image/font assets compiled in but never refe
 python3 tools/check_material.py --list   # full asset-to-reference map
 ```
 
-`check_glyphs.py` is font-aware: it validates each file against the smallest `font_fusion*` it uses, so 24 px headline text is checked against that font's smaller subset (see [LVGL Chinese text](lvgl-chinese-fonts.md)). `check_material.py` reports any `art_*` / `ic_*` / `cha_*` / `font_*` / `logo*` asset listed in `main/CMakeLists.txt` whose symbol no other file references — remove it from the build to save Flash, or wire it up. It also notes assets on disk that were never added to the build. Both are static heuristics; confirm before deleting.
+`check_glyphs.py` is font-aware: it validates each file against the smallest `font_fusion*` it uses, so 24 px headline text is checked against that font's smaller subset (see [LVGL Chinese text](lvgl-chinese-fonts.md)). `check_material.py` scans the asset sources under `main/assets/images/` and `main/assets/fonts/` and reports any `art_*` / `ic_*` / `cha_*` / `font_*` / `logo*` asset whose symbol no other file references — remove it from the build to save Flash, or wire it up. It also notes assets on disk that were never added to the build. Both are static heuristics; confirm before deleting.
 
 Hardware-affecting changes must also run the applicable on-device checklist in the hardware guide. Report compilation separately from physical-device validation.
 

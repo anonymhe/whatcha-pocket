@@ -60,7 +60,7 @@ python3 tools/check_material.py   # 编译进固件却无人引用的图片/字�
 python3 tools/check_material.py --list   # 完整的素材-引用对照表
 ```
 
-`check_glyphs.py` 按字体区分：每个文件对照它用到的最小那套 `font_fusion*` 校验，所以 24 px 标题文案按该字体较小的子集检查（见 [LVGL 中文显示](lvgl-chinese-fonts.zh_CN.md)）。`check_material.py` 报出 `main/CMakeLists.txt` 列入编译、但符号未被其他文件引用的 `art_*` / `ic_*` / `cha_*` / `font_*` / `logo*` 素材——从构建里移除以省 Flash，或补上使用它的代码；它也会提示磁盘上存在但从未加入构建的素材。两者均为静态启发式，删除前请人工确认。
+`check_glyphs.py` 按字体区分：每个文件对照它用到的最小那套 `font_fusion*` 校验，所以 24 px 标题文案按该字体较小的子集检查（见 [LVGL 中文显示](lvgl-chinese-fonts.zh_CN.md)）。`check_material.py` 扫描 `main/assets/images/` 与 `main/assets/fonts/` 下的素材源，报出编译进固件、但符号未被其他文件引用的 `art_*` / `ic_*` / `cha_*` / `font_*` / `logo*` 素材——从构建里移除以省 Flash，或补上使用它的代码；它也会提示磁盘上存在但从未加入构建的素材。两者均为静态启发式，删除前请人工确认。
 
 涉及物理外设的改动必须在真机运行硬件指南验收清单，并把“编译通过”与“硬件验证通过”分开记录。
 
