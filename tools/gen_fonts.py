@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-"""Regenerate the Fusion Pixel LVGL C fonts from the TTF sources in assets/font.
+"""Regenerate the Fusion Pixel LVGL C fonts from the TTF sources in assets/fonts.
 
-Fonts produced (see AGENTS.md and assets/README.md):
+The generated C sources land in main/assets/fonts/, next to the LVGL image
+sources in main/assets/images/ (see AGENTS.md and assets/README.md).
+
+Fonts produced:
 
   font_fusion10.c  GB2312 + ASCII, 10 px body text (fusion-pixel 10px)
   font_fusion12.c  GB2312 + ASCII, 12 px body text (fusion-pixel 12px)
@@ -23,8 +26,8 @@ import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FONT_DIR = os.path.join(ROOT, "assets", "font")
-MAIN = os.path.join(ROOT, "main")
+FONT_DIR = os.path.join(ROOT, "assets", "fonts")
+FONT_OUT = os.path.join(ROOT, "main", "assets", "fonts")
 
 # Hand-authored 10 px glyphs for headline characters the pixel TTFs cannot
 # render crisply at 20 px (e.g. the mascot name 猹, which only exists on the
@@ -120,7 +123,7 @@ def rel(path):
 
 
 def conv(out_name, font_name, size, latin, zh, zh_symbols, extra_font=None, extra_symbols=""):
-    out = os.path.join(MAIN, out_name)
+    out = os.path.join(FONT_OUT, out_name)
     cmd = [
         NPX, "--yes", "lv_font_conv",
         "--bpp", "1",
@@ -148,7 +151,7 @@ def patch_custom_glyphs(out_name, scale, custom):
     every following bitmap_index so the font stays self-consistent."""
     if not custom:
         return
-    path = os.path.join(MAIN, out_name)
+    path = os.path.join(FONT_OUT, out_name)
     src = open(path, encoding="utf-8").read()
 
     # --- parse the glyph bitmap byte array ---

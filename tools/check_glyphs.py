@@ -11,7 +11,8 @@
 如果用了较小的字号，它的所有中文字面量都必须落在那个较小子集内，否则 12px 看着正常、
 24px 却是方块。本脚本对每个文件按它引用的最小字库校验。
 
-各字库的收录字集直接从 main/font_fusion*.c 头部的 Opts 注释读取，字号表无需手工同步。
+各字库的收录字集直接从 main/assets/fonts/font_fusion*.c 头部的 Opts 注释读取，
+字号表无需手工同步。
 font_fusion12 另有 docs/watcha/fusion12_chars.txt 作为可读清单，与 Opts 一致。
 """
 import os
@@ -20,6 +21,7 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MAIN = os.path.join(ROOT, 'main')
+FONT_DIR = os.path.join(MAIN, 'assets', 'fonts')
 ASCII = {chr(c) for c in range(0x20, 0x7f)}
 
 
@@ -38,11 +40,11 @@ def font_symbols(c_path):
 def load_fonts():
     """返回 {font_name: 收录字集}，字集含 ASCII。"""
     fonts = {}
-    for f in sorted(os.listdir(MAIN)):
+    for f in sorted(os.listdir(FONT_DIR)):
         m = re.fullmatch(r'(font_fusion\d+)\.c', f)
         if not m:
             continue
-        syms = font_symbols(os.path.join(MAIN, f))
+        syms = font_symbols(os.path.join(FONT_DIR, f))
         if syms is not None:
             fonts[m.group(1)] = syms | ASCII
     return fonts
@@ -69,7 +71,7 @@ def pick_font(src, fonts):
 def main():
     fonts = load_fonts()
     if not fonts:
-        print('错误：在 main/ 下找不到 font_fusion*.c，无法读取字库。')
+        print('错误：在 main/assets/fonts/ 下找不到 font_fusion*.c，无法读取字库。')
         sys.exit(2)
 
     paths = sys.argv[1:]

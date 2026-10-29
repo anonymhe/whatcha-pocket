@@ -1,4 +1,4 @@
-// main/cha_pool.c —— 加图：png 丢进 ~/work/assets/src，cd 进去跑 convert_cha.sh 72 64 cha xxx.png，然后下面数组加一行 + CMakeLists 加文件
+// main/cha_pool.c —— 加图：png 丢进 ~/work/assets/src，cd 进去跑 convert_cha.sh 72 64 cha xxx.png，转到 main/assets/images/cha_xxx.c，然后下面数组加一行（该目录整目录自动编译）
 #include "cha_pool.h"
 #include "esp_random.h"
 LV_IMAGE_DECLARE(cha_box);

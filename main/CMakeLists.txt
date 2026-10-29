@@ -1,59 +1,26 @@
 # 二创玩法：main/apps/ 下的 .c 自动编译
 file(GLOB WATCHA_APP_SRCS "${CMAKE_CURRENT_LIST_DIR}/apps/*.c")
 
+# 素材：main/assets/ 存放由源图与 TTF 生成的 C 源。
+#   images/  art_* ic_* cha_* logo*（LVGL 图片数据），目录内自动编译。
+#   fonts/   font_*（字库），按 Flash 预算逐个列出；未列出的留在磁盘但不编入
+#            （font_fusion10.c 就是这种情况，见 tools/check_material.py）。
+file(GLOB WATCHA_IMAGE_SRCS "${CMAKE_CURRENT_LIST_DIR}/assets/images/*.c")
+set(WATCHA_FONT_SRCS
+    "assets/fonts/font_fusion12.c"
+    "assets/fonts/font_fusion20.c"
+    "assets/fonts/font_ps8.c"
+    "assets/fonts/font_ps16.c")
+
 idf_component_register(
     SRCS "main.c"
          "page_lab.c"
          ${WATCHA_APP_SRCS}
+         ${WATCHA_IMAGE_SRCS}
+         ${WATCHA_FONT_SRCS}
          "boot_anim.c"
          "page_home.c"
          "cha_pool.c"
-         "cha_box.c"
-         "cha_ctrl_c.c"
-         "cha_ctrl_v.c"
-         "cha_dinosaur.c"
-         "cha_duck.c"
-         "cha_eatwatermelon.c"
-         "cha_flower.c"
-         "cha_goldcha.c"
-         "cha_happy.c"
-         "cha_helloworld.c"
-         "cha_love.c"
-         "cha_music.c"
-         "cha_nonsense.c"
-         "cha_pencil.c"
-         "cha_photograph.c"
-         "cha_school.c"
-         "cha_sleep.c"
-         "cha_spirit.c"
-         "cha_stone.c"
-         "cha_svg.c"
-         "cha_work.c"
-         "art_fortune_none.c"
-         "art_fortune_zhong.c"
-         "art_fortune_shang.c"
-         "art_fortune_ss.c"
-         "art_pomo_focus.c"
-         "art_pomo_pause.c"
-         "art_pomo_done.c"
-         "art_pomo_rest.c"
-         "art_melon_go.c"
-         "art_melon_result.c"
-         "art_melon_record.c"
-         "art_melon_toofast.c"
-         "art_muyu_normal.c"
-         "art_muyu_combo.c"
-         "art_type.c"
-         "art_intro_melon.c"
-         "art_pomo_d45.c"
-         "art_pomo_d25.c"
-         "art_pomo_d15.c"
-         "art_1024_over.c"
-         "art_1024_win.c"
-         "art_intro_fortune.c"
-         "art_intro_type.c"
-         "art_intro_muyu.c"
-         "art_intro_1024.c"
          "pages.c"
          "storage.c"
          "ble_sync.c"
@@ -67,17 +34,6 @@ idf_component_register(
          "page_melon.c"
          "page_muyu.c"
          "page_1024.c"
-         "font_fusion12.c"
-         "font_fusion20.c"
-         "font_ps8.c"
-         "font_ps16.c"
-         "ic_clover.c"
-         "ic_tomato.c"
-         "ic_melon.c"
-         "ic_type.c"
-         "ic_cha_mallet.c"
-         "ic_tiles.c"
-         "logo32_watcha.c"
     INCLUDE_DIRS "." "apps"
     REQUIRES bsp esp_timer nvs_flash bt json
 )
