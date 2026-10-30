@@ -26,6 +26,11 @@ bool        ble_sync_take_updated(void);   // 有新同步返回 true 并清标�
 void        ble_sync_adv_begin(void);
 void        ble_sync_adv_end(void);
 
+// 同步成功后立刻断链：停止广播、断开当前连接，使设备不再可见；NimBLE 主机仍常驻。
+// 与 adv_end 行为一致，但语义上用于「同步已完成、提示停留期间无需再占用链路」，
+// 可在 adv_end（离页）之前先行调用，避免完成提示期间链路空占 2 秒。
+void        ble_sync_release_link(void);
+
 // 蓝牙当前状态（同步页用于提示用户）：
 typedef enum {
     BLE_SYNC_INIT = 0,   // 主机未就绪（蓝牙还在启动）

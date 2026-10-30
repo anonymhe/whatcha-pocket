@@ -43,6 +43,7 @@ static uint16_t    s_res_handle;
 static atomic_bool s_updated;
 
 static volatile bool s_conn = false;      // 已连接
+static volatile uint16_t s_conn_handle = BLE_HS_CONN_HANDLE_NONE;  // 当前连接句柄，断链用
 static volatile bool s_host_ready = false;  // NimBLE 主机已同步、地址就绪
 static volatile bool s_adv = false;        // 同步页要求广播中（只在同步页为真）
 
@@ -211,12 +212,14 @@ static int gap_event(struct ble_gap_event *e, void *arg)
     switch (e->type) {
     case BLE_GAP_EVENT_CONNECT:
         ESP_LOGI(TAG, "connect %s", e->connect.status == 0 ? "ok" : "fail");
-        if (e->connect.status != 0) { if (s_adv) advertise(); } else s_conn = true;
+        if (e->connect.status != 0) { if (s_adv) advertise(); }
+        else { s_conn = true; s_conn_handle = e->connect.conn_handle; }
         s_len = 0; s_expect = 0; s_bad = false;
         break;
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGI(TAG, "disconnect");
         s_conn = false;
+        s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
         if (s_adv) advertise();   // 仍在同步页：继续等下一次连接；离页后 s_adv=false 不再重播
         break;
     case BLE_GAP_EVENT_ADV_COMPLETE:
@@ -254,23 +257,38 @@ static void advertise(void)
     if (rc != 0 && rc != BLE_HS_EALREADY) ESP_LOGE(TAG, "advertise rc=%d", rc);
 }
 
+// 停广播 + 断当前连接。s_adv 置假后 GAP 的 disconnect/adv_complete 回调不再重新广播，
+// 设备彻底不可见。NimBLE 主机仍常驻。分包重组状态（s_len/s_expect/s_bad）是 host 任务专有，
+// 不在这里（UI 任务）清；新一次传输会在 host 任务的 CONNECT 与 seq==0 处自行复位。
+static void stop_link(void)
+{
+    s_adv = false;
+    ble_gap_adv_stop();
+    if (s_conn) ble_gap_terminate(s_conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+}
+
 // 进同步页：开始广播（只有此时蓝牙才可被发现/连接）。
 void ble_sync_adv_begin(void)
 {
     if (s_adv) return;
     s_adv = true;
-    s_len = 0; s_expect = 0; s_bad = false;
     if (s_host_ready) advertise();
     ESP_LOGI(TAG, "adv begin");
 }
 
-// 离同步页：停止广播并断开当前连接，之后蓝牙不可见。
+// 同步成功后立刻断链：完成提示停留期间链路已无用，立即释放，不等离页。
+void ble_sync_release_link(void)
+{
+    if (!s_adv && !s_conn) return;
+    stop_link();
+    ESP_LOGI(TAG, "link released");
+}
+
+// 离同步页：停广播并断开连接，之后蓝牙不可见。
 void ble_sync_adv_end(void)
 {
-    if (!s_adv) return;
-    s_adv = false;
-    ble_gap_adv_stop();
-    if (s_conn) ble_gap_terminate(BLE_HS_CONN_HANDLE_NONE, BLE_ERR_REM_USER_CONN_TERM);
+    if (!s_adv && !s_conn) return;
+    stop_link();
     ESP_LOGI(TAG, "adv end");
 }
 

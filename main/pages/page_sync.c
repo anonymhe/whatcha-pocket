@@ -2,7 +2,7 @@
 // 规则（本页独有）：
 //   · 蓝牙只在本页广播（进页 begin、离页 end），其它页面不开蓝牙。
 //   · 90 秒无按键自动超时并返回首页；任意按键重置 90 秒计时。
-//   · 收到有效同步数据后显示「同步完成」提示，约 2 秒后自动返回首页。
+//   · 收到有效同步数据后显示「同步完成」提示，并立即断开蓝牙链路（不等离页），约 2 秒后自动返回首页。
 #include "pages.h"
 #include "app_ui.h"
 #include "sfx.h"
@@ -101,6 +101,7 @@ static void poll_tick(lv_timer_t *t)
     if (s_done) return;
     if (ble_sync_take_updated()) {
         s_done = true;
+        ble_sync_release_link();   // 同步完成即断链，不让连接持续到 2 秒提示结束后的离页
         lv_label_set_text(s_status_lbl, "同步完成");
         lv_obj_set_style_text_color(s_status_lbl, lv_color_hex(C_GREEN), 0);
         lv_label_set_text(s_count_lbl, "");
