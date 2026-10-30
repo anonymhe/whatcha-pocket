@@ -55,9 +55,22 @@ run_firmware_checks() (
         -o "${validation_build_dir}/FoloToy-AI-Passport-full.bin"
     python3 tools/verify_firmware.py "${validation_build_dir}"
     mkdir -p "${repo_root}/build"
+    # Preserve all four flashable images before the temp build dir is cleaned:
+    # the merged image (flash at 0x0) plus the three component images
+    # (bootloader 0x0, partition table 0x8000, app 0x10000) so a release can
+    # offer both the one-shot and the piecewise flashing paths.
     install -m 0644 \
         "${validation_build_dir}/FoloToy-AI-Passport-full.bin" \
         "${repo_root}/build/FoloToy-AI-Passport-full.bin"
+    install -m 0644 \
+        "${validation_build_dir}/FoloToy-AI-Passport.bin" \
+        "${repo_root}/build/FoloToy-AI-Passport.bin"
+    install -m 0644 \
+        "${validation_build_dir}/bootloader/bootloader.bin" \
+        "${repo_root}/build/bootloader.bin"
+    install -m 0644 \
+        "${validation_build_dir}/partition_table/partition-table.bin" \
+        "${repo_root}/build/partition-table.bin"
     echo "Firmware build: PASS"
 )
 

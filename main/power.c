@@ -4,6 +4,8 @@
 
 #include "bsp_display.h"
 #include "bsp_power.h"
+#include "bsp_battery.h"
+#include "app_ui.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -33,9 +35,18 @@ static const char *TAG = "power";
 // 留给 sfx 任务把 codec 关完，避免 MCU 停在 I2S 还有写入的时候。
 #define CODEC_SETTLE_MS 300
 
+// 电量读数的刷新节奏（唤醒与重绘公用同一套间隔）。
+// STANDBY 期间按这个间隔定期唤醒重绘一帧；ACTIVE/DIM 期间按同一间隔就地重绘。
+// 电量充足时刷得勤一点；掉到阈值以下就拉长间隔省电。
+// 三个数都设计成可调：以后搬到设置页，或改阈值/间隔，只动这里即可。
+#define BATTERY_REFRESH_US        (30LL * 1000000)   // 默认刷新间隔
+#define BATTERY_REFRESH_LOW_US    (60LL * 1000000)   // 低电量时的刷新间隔
+#define BATTERY_REFRESH_LOW_SOC   50                  // 电量(%)低于等于此值切到低电量间隔
+
 static sleep_policy_t s_policy;
 static uint32_t       s_holds;
 static uint64_t       s_standby_refresh_us;
+static int64_t        s_last_battery_refresh_us;   // 上次重绘电量读数的时刻，只在 LVGL 任务里读写
 static sleep_stage_t  s_stage = SLEEP_STAGE_ACTIVE;
 // 时间戳跨任务读写：按键回调在 button/esp_timer 任务，这里是 LVGL 任务。
 // RV32 上 64 位读写不是单条指令，不加保护会读到撕裂值（超时忽长忽短）。
@@ -134,10 +145,34 @@ bool power_key_activity(void)
     return true;   // 这一下只用来叫醒，不交给页面
 }
 
+// 电量刷新间隔：电量足够时 30s，掉到阈值以下改 60s。
+// 读电量失败（-1）按「没掉到低电」处理，用默认间隔。
+// 唤醒（STANDBY 定时）与屏上重绘（ACTIVE/DIM）共用这个间隔，只有一个来源。
+static uint64_t battery_refresh_period_us(void)
+{
+    const int soc = bsp_battery_soc();
+    if (soc >= 0 && soc <= BATTERY_REFRESH_LOW_SOC) return BATTERY_REFRESH_LOW_US;
+    return BATTERY_REFRESH_US;
+}
+
+// 距上次重绘超过当前间隔就重绘一次屏上所有电量标签。
+// 只在 LVGL 任务里调（power_service / enter_standby 都在该任务），故不需加锁。
+static void maybe_refresh_battery(void)
+{
+    const int64_t now = esp_timer_get_time();
+    if (now - s_last_battery_refresh_us < (int64_t)battery_refresh_period_us()) return;
+    s_last_battery_refresh_us = now;
+    ui_battery_refresh_all();
+}
+
 static bsp_wake_source_t standby_wake_source(void)
 {
-    if (s_standby_refresh_us == 0) return BSP_WAKE_SOURCE_BUTTON;
-    return bsp_wake_source_button_and_timer(s_standby_refresh_us);
+    // s_standby_refresh_us 非 0 时作为显式覆盖（保留给设置页/调试）；
+    // 否则按电量自动选间隔，与屏上重绘用同一套。
+    const uint64_t period = s_standby_refresh_us ? s_standby_refresh_us
+                                                 : battery_refresh_period_us();
+    if (period == 0) return BSP_WAKE_SOURCE_BUTTON;
+    return bsp_wake_source_button_and_timer(period);
 }
 
 static void enter_standby(void)
@@ -163,14 +198,15 @@ static void enter_standby(void)
 
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "本次未能入睡: %s", esp_err_to_name(err));
-    } else if (s_standby_refresh_us) {
+    } else if (cause == BSP_WAKE_CAUSE_TIMER) {
         ESP_LOGD(TAG, "定期唤醒，睡了 %lld ms", slept_us / 1000);
     }
 
     if (err == ESP_OK && cause == BSP_WAKE_CAUSE_TIMER) {
-        // 定时唤醒只是为了重绘：不重置空闲计时，否则「待机中定期刷新」的内容
-        // 每醒一次就把自己续命成 ACTIVE，永远睡不回去。姿态和亮度维持原样，
+        // 定时唤醒就是为了重绘电量读数：刷一次再睡回去。不重置空闲计时，
+        // 否则每醒一次就把自己续命成 ACTIVE，永远睡不回去。姿态和亮度维持原样，
         // 让 power_service() 下一次评估时照旧落在 STANDBY。
+        maybe_refresh_battery();
         return;
     }
 
@@ -201,6 +237,10 @@ void power_service(bool ready)
         return;
     }
     if (next != s_stage) apply_stage(next);
+
+    // ACTIVE/DIM 期间（MCU 没睡）按同一套间隔就地重绘电量，补上旧那个
+    // 每标签 30s 定时器的职责；节奏由 maybe_refresh_battery() 自己节流。
+    maybe_refresh_battery();
 }
 
 bool power_deep_sleep(void)

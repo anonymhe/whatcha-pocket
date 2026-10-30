@@ -3,18 +3,25 @@
 #include "bsp_battery.h"
 #include <stdio.h>
 
-/* 电量读数与定时器的生命周期：定时器指针挂在标签的 user_data 上，
- * 标签随所属屏幕一起删除时在 LV_EVENT_DELETE 里一并删掉定时器，
- * 页面因此不需要再单独管理电量定时器（漏删会回调到已释放的标签）。 */
-static void battery_refresh_cb(lv_timer_t *t)
-{
-    ui_battery_refresh((lv_obj_t *)lv_timer_get_user_data(t));
-}
+/* 电量标签注册表：每个屏幕的右上角电量标签都挂进这条单向链表。
+ * 何时刷新不在这里决定——power.c 按设备姿态和唤醒节奏调 ui_battery_refresh_all()，
+ * 本文件只负责「有哪些标签要重绘」。如此就没有每个标签各自跑一个定时器、
+ * 而且还要跟 STANDBY 的唤醒周期恰巧对齐的耦合；刷新节奏只有 power.c 一个来源。
+ * 生命周期：标签在 LV_EVENT_DELETE 里自动从链表摘除，页面无需再管。 */
+typedef struct battery_label { lv_obj_t *label; struct battery_label *next; } battery_label_t;
+static battery_label_t *s_battery_labels;
 
-static void battery_cleanup_cb(lv_event_t *e)
+static void battery_unregister_cb(lv_event_t *e)
 {
-    lv_timer_t *t = (lv_timer_t *)lv_obj_get_user_data(lv_event_get_target_obj(e));
-    if (t) lv_timer_delete(t);
+    const lv_obj_t *gone = lv_event_get_target_obj(e);
+    for (battery_label_t **pp = &s_battery_labels; *pp; pp = &(*pp)->next) {
+        if ((*pp)->label == gone) {
+            battery_label_t *dead = *pp;
+            *pp = dead->next;
+            lv_free(dead);
+            return;
+        }
+    }
 }
 
 lv_obj_t *ui_label(lv_obj_t *parent, const char *text, const lv_font_t *font, uint32_t color)
@@ -56,11 +63,20 @@ lv_obj_t *ui_battery_add(lv_obj_t *parent)
     lv_obj_set_pos(l, UI_TOP_RIGHT_X, UI_TOP_RIGHT_Y);
     ui_battery_refresh(l);
 
-    lv_timer_t *t = lv_timer_create(battery_refresh_cb, 30000, NULL);
-    lv_timer_set_user_data(t, l);
-    lv_obj_set_user_data(l, t);
-    lv_obj_add_event_cb(l, battery_cleanup_cb, LV_EVENT_DELETE, NULL);
+    battery_label_t *node = lv_malloc(sizeof *node);
+    if (node) {
+        node->label = l;
+        node->next  = s_battery_labels;
+        s_battery_labels = node;
+        lv_obj_add_event_cb(l, battery_unregister_cb, LV_EVENT_DELETE, NULL);
+    }
     return l;
+}
+
+void ui_battery_refresh_all(void)
+{
+    for (battery_label_t *n = s_battery_labels; n; n = n->next)
+        ui_battery_refresh(n->label);
 }
 
 void ui_topbar_ex(lv_obj_t *scr, const char *title, const lv_font_t *title_font)

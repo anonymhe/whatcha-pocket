@@ -31,7 +31,7 @@ ST7789 面板在 3.3 V 轨带电时自己按帧刷新 GRAM，所以 light sleep 
 | 层 | 文件 | 职责 |
 | --- | --- | --- |
 | 策略 | `main/sleep_policy.c` | 纯函数：（空闲时长、是否就绪、caffeine、蓝牙占用）→ 状态；不碰 IDF、不碰 LVGL，有 host test 覆盖 |
-| 应用 | `main/power.c` | 掌管计时器，执行背光与 codec 变更，调用 light/deep sleep |
+| 应用 | `main/power.c` | 掌管计时器，执行背光与 codec 变更，驱动电量读数的刷新节奏，调用 light/deep sleep |
 | 板级 | `components/bsp/bsp_power.c` | 装/卸唤醒源、入睡、逐个下电外设 |
 
 页面不直接调 BSP 的睡眠接口，而是调用 `main/power.h` 里的 `power_hold()`：
@@ -52,15 +52,25 @@ ST7789 面板在 3.3 V 轨带电时自己按帧刷新 GRAM，所以 light sleep 
 - `esp_deep_sleep_enable_gpio_wakeup()` 的第一个参数是**引脚位掩码**，不是引脚号。正确的是 `1ULL << 0`；传 `0` 会被判非法，若又忽略返回值，就得到一次没有任何唤醒源的睡眠。
 - `sdkconfig.defaults` 里 `CONFIG_ESP_SLEEP_GPIO_ENABLE_INTERNAL_RESISTORS` 设为 `n`。板上已有外部上拉，再叠内部上拉会把整条分压阶梯抬高，三个按键的电压窗口随之漂移。
 
-## STANDBY 期间的定期唤醒
+## STANDBY 期间的定期唤醒与电量读数
 
-`power_set_standby_refresh_us()` 会在按键之外再加一个定时唤醒源。当前固件保持为 `0`（只靠按键），因为首页和工牌式显示都是静态的。
+顶栏里的电量百分比要在两种截然不同的场景下跟上真实情况：用户正在某个界面操作时，以及设备在 `STANDBY` 里 light sleep 时。比起让每个界面各自跑一个刷新定时器，`main/power.c` 把两者的刷新节奏都握在手里，这样「何时刷新」只有一个来源。
 
-如果以后有空闲时也要重绘的界面，例如整分刷新一次的时钟，请在这里设周期，而不是把空闲超时改短。`power_service()` 每次唤醒都会跑一遍，画面重绘完立刻再睡回去。周期要留得足够长，否则省电就白费了：每秒醒一次基本等同于从不入睡。
+- 节奏是一个间隔，由 `power.c` 里的 `BATTERY_REFRESH_*` 常量定义：默认 30s，电量掉到 50% 或以下时拉长到 60s。`bsp_battery_soc()` 返回 `-1`（读失败）按「没掉到低电」处理，用默认间隔。
+- 醒着时（`ACTIVE`/`DIM`），`power_service()` 每 500 ms 跑一次，调 `maybe_refresh_battery()`，只在间隔到了才重绘。
+- 在 `STANDBY`，同一个间隔会被装成定时唤醒源，与按键并列。`power_set_standby_refresh_us()` 默认留在 `0`，表示「不覆盖，按电量自动选间隔」。设成非 0 则强制用该固定周期，留给设置页或调试。
 
-定时唤醒**不算**操作：它不能重置空闲计时，否则会定期刷新的界面每次醒来都把自己续成 `ACTIVE`，永远睡不回去。`bsp_power_light_sleep()` 会回报唤醒原因，`enter_standby()` 在 `BSP_WAKE_CAUSE_TIMER` 时直接返回继续睡，状态与亮度都保持原样。只有按键叫醒（或本次入睡被拒）才重置计时并回到 `ACTIVE`。
+UI 侧不再握有任何节奏。`main/apps/app_ui.c` 维一份电量标签注册表；`ui_battery_refresh_all()` 重绘它们，标签在 `LV_EVENT_DELETE` 里自动注销，因此链表不会比所属屏幕活得长。这就是消除之前那个耦合的做法——过去每个标签各带一个独立的 30s `lv_timer`，它只因为恰好跟唤醒周期对齐，才能在 `STANDBY` 里做出可见的刷新。
 
-这类界面要保持可见，背光必须能扛过 light sleep，而它本来就能：`bsp_display.c` 一次性把 LEDC 通道配成 `LEDC_SLEEP_MODE_KEEP_ALIVE`，时钟源配成 `LEDC_USE_RC_FAST_CLK`（APB 在睡眠期间停止）。运行期不需要任何切换，所以「屏幕亮不亮」只由占空比决定，`STANDBY` 因此只是把占空比压低，而不是关掉输出。
+首页那条 HP 血条式的电量是页面自己的组件，不是顶栏标签，所以它保留自己的 30s 定时器。它在定时唤醒时依旧能正确刷新，因为下面的 tick resume 路径把每个 LVGL 定时器都重基到了当下。
+
+定时唤醒**不算**操作：它不能重置空闲计时，否则会定期刷新的界面每次醒来都把自己续成 `ACTIVE`，永远睡不回去。`bsp_power_light_sleep()` 会回报唤醒原因，`enter_standby()` 在 `BSP_WAKE_CAUSE_TIMER` 时先刷一次电量再直接睡回去，状态与亮度都保持原样。只有按键叫醒（或本次入睡被拒）才重置计时并回到 `ACTIVE`。
+
+要保持屏幕可见，背光必须能扛过 light sleep，而它本来就能：`bsp_display.c` 一次性把 LEDC 通道配成 `LEDC_SLEEP_MODE_KEEP_ALIVE`，时钟源配成 `LEDC_USE_RC_FAST_CLK`（APB 在睡眠期间停止）。运行期不需要任何切换，所以「屏幕亮不亮」只由占空比决定，`STANDBY` 因此只是把占空比压低，而不是关掉输出。
+
+## 为什么睡多久唤醒都不会变慢
+
+LVGL 的 tick 在 light sleep 期间是停的（`bsp_lvgl_tick_stop()`），所以唤醒时 `bsp_lvgl_tick_resume(slept_ms)` 会把 `lv_tick` 一下往前跳整段睡眠时长，让时钟和倒计时和真实时间对得上。但单跳 tick 就是个坑：调度器下一拍会发现每个周期性 `lv_timer` 都「欠跑了整段睡眠」，于是在同一次 `lv_timer_handler` 里把每个欠跑的周期都补跑一遍（10ms 周期欠一小时 ≈ 36 万次），把界面堵死数秒，表现为睡得越久、唤醒越慢。所以 `bsp_lvgl_tick_resume()` 还会把每个 timer 的 `last_run` 重置到「现在」，把调度器重基到当下而不撤销 tick 跳变。这也是电量和首页定时器能在定时唤醒时及时触发的原因。
 
 ## 重新打开 deep sleep
 

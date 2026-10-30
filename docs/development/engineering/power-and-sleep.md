@@ -44,7 +44,7 @@ stepped by the manual path, which is why every idle decision uses
 | Layer | File | Responsibility |
 | --- | --- | --- |
 | Policy | `main/sleep_policy.c` | pure function of (idle time, ready, caffeine, radio) to a stage; no IDF, no LVGL, covered by a host test |
-| Application | `main/power.c` | owns the timers, applies backlight and codec changes, calls light/deep sleep |
+| Application | `main/power.c` | owns the timers, applies backlight and codec changes, drives the battery readout cadence, calls light/deep sleep |
 | Board | `components/bsp/bsp_power.c` | arms and disarms wake sources, sleeps, powers peripherals down |
 
 Pages never talk to the BSP sleep layer. They call `power_hold()` from
@@ -89,31 +89,62 @@ Two traps worth knowing:
   the internal one on top shifts the whole divider ladder, so the three key
   windows drift.
 
-## Periodic wake while in STANDBY
+## Periodic wake while in STANDBY and the battery readout
 
-`power_set_standby_refresh_us()` adds a timer wake source alongside the button.
-The current firmware leaves it at `0` (button only) because both the home screen
-and the badge-style display are static.
+The battery percentage shown in the top bar has to keep up with reality in two very
+different situations: while the user is actively on a screen, and while the device
+is light-sleeping in `STANDBY`. Rather than let each screen run its own refresh
+timer, `main/power.c` owns the refresh cadence for both, so there is a single
+source of truth for *when* the reading updates.
 
-If a future screen needs to redraw while idle, for example a clock that updates on
-the minute mark, set that period here rather than shortening the idle timeout.
-`power_service()` runs once per wake, so the screen repaints and the device sleeps
-again immediately. Keep the period long enough not to defeat the savings: one wake
-per second is roughly equivalent to never sleeping.
+- The cadence is one interval, defined by the `BATTERY_REFRESH_*` constants in
+  `power.c`: 30 s normally, stretching to 60 s once the charge is at or below 50 %.
+  `bsp_battery_soc()` returning `-1` is treated as "not low", so a failed read uses
+  the default interval.
+- While awake (`ACTIVE`/`DIM`), `power_service()` runs every 500 ms and calls
+  `maybe_refresh_battery()`, which repaints only after the interval has elapsed.
+- In `STANDBY`, the same interval is armed as a timer wake alongside the button.
+  `power_set_standby_refresh_us()` leaves this at `0` by default, meaning "do not
+  override, pick the interval by charge". A non-zero value forces a fixed period
+  and is reserved for a settings page or debugging.
+
+The UI side holds no cadence of its own. `main/apps/app_ui.c` keeps a small registry
+of every live battery label; `ui_battery_refresh_all()` repaints them, and a label
+unregisters itself on `LV_EVENT_DELETE`, so the list cannot outlive its screen. This
+is what removed the earlier coupling, where each label carried an independent 30 s
+`lv_timer` that only produced a visible refresh in `STANDBY` because it happened to
+line up with the wake period.
+
+The home screen's HP-style battery bar is a page-specific widget, not a top-bar
+label, so it keeps its own 30 s timer. It still refreshes correctly on a standby
+wake because the tick-resume path below rebases every LVGL timer to the present.
 
 A timer wake is deliberately not treated as activity: it must not restart the idle
 clock, or a refreshing screen would keep re-qualifying itself as `ACTIVE` and never
 sleep again. `bsp_power_light_sleep()` reports what woke it, and `enter_standby()`
-goes straight back to bed on `BSP_WAKE_CAUSE_TIMER`, leaving the stage and the
-brightness untouched. Only a button wake, or a refused sleep, resets the idle clock
-and returns to `ACTIVE`.
+refreshes the battery then goes straight back to bed on `BSP_WAKE_CAUSE_TIMER`,
+leaving the stage and the brightness untouched. Only a button wake, or a refused
+sleep, resets the idle clock and returns to `ACTIVE`.
 
-The backlight has to survive light sleep for such a screen to remain visible, and
+The backlight has to survive light sleep for the screen to remain visible, and
 it does: `bsp_display.c` configures the LEDC channel once with
 `LEDC_SLEEP_MODE_KEEP_ALIVE` and the timer with `LEDC_USE_RC_FAST_CLK`, because
 APB stops during sleep. Nothing has to be switched at runtime, so brightness is
 the only thing that decides whether the screen is lit. That is also why `STANDBY`
 shortens the duty cycle instead of switching the output off.
+
+## Why waking is cheap no matter how long the sleep was
+
+LVGL's tick is paused across light sleep (`bsp_lvgl_tick_stop()`), so on wake
+`bsp_lvgl_tick_resume(slept_ms)` jumps `lv_tick` forward by the whole sleep
+duration to keep clocks and countdowns time-correct. That jump alone is a trap: the
+scheduler's next pass would see every periodic `lv_timer` as overdue by the entire
+sleep and try to replay every missed period in one `lv_timer_handler` call (a 10 ms
+timer overdue by an hour is roughly 360k catch-up iterations), freezing the UI for
+seconds and making the wake cost scale with how long the device slept. So
+`bsp_lvgl_tick_resume()` also resets every timer's `last_run` to now, which rebases
+the scheduler to the present without undoing the tick jump. This is also what lets
+the battery and home-screen timers fire promptly on a standby wake.
 
 ## Turning deep sleep back on
 
