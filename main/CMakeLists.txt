@@ -34,6 +34,8 @@ idf_component_register(
          "storage.c"
          "ble_sync.c"
          "sfx.c"
+         "sleep_policy.c"
+         "power.c"
     INCLUDE_DIRS "." "apps"
     REQUIRES bsp esp_timer nvs_flash bt json
 )
