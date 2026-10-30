@@ -4,6 +4,7 @@
 #include "bsp_pins.h"
 #include "driver/spi_master.h"
 #include "driver/ledc.h"
+#include "esp_check.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_vendor.h"
@@ -60,7 +61,9 @@ static void backlight_init(void) {
         .timer_num       = BSP_BL_LEDC_TIMER,
         .duty_resolution = BSP_BL_LEDC_RES,
         .freq_hz         = BSP_BL_LEDC_FREQ_HZ,
-        .clk_cfg         = LEDC_AUTO_CLK,
+        // 必须显式选 RC_FAST：light sleep 期间要保住 PWM 输出，而 APB 时钟睡下去就没了。
+        // RC_FAST 精度差几个百分点，对 LED 背光无影响。
+        .clk_cfg         = LEDC_USE_RC_FAST_CLK,
     };
     esp_err_t e = ledc_timer_config(&t);
     if (e != ESP_OK) { ESP_LOGE(TAG, "ledc_timer_config 失败: %s", esp_err_to_name(e)); return; }
@@ -72,6 +75,11 @@ static void backlight_init(void) {
         .timer_sel  = BSP_BL_LEDC_TIMER,
         .duty       = 0,
         .hpoint     = 0,
+        // 固定选 KEEP_ALIVE：STANDBY（light sleep）期间屏幕要继续亮着，让空闲的画面
+        // 还看得见。这个模式不能按需来回切 —— ledc_channel_config() 只会把它打开，
+        // IDF 没有反向接口把通道退回 NO_ALIVE；所以这里一次配好，之后只改 duty。
+        // 背光的「灭」因此只能靠 bsp_display_backlight(0) 把占空比压到 0。
+        .sleep_mode = LEDC_SLEEP_MODE_KEEP_ALIVE,
     };
     e = ledc_channel_config(&ch);
     if (e != ESP_OK) { ESP_LOGE(TAG, "ledc_channel_config 失败: %s", esp_err_to_name(e)); return; }
@@ -146,4 +154,17 @@ void bsp_display_backlight(uint8_t percent) {
     uint32_t duty = (max_duty * percent) / 100u;
     ledc_set_duty(BSP_BL_LEDC_MODE, BSP_BL_LEDC_CHANNEL, duty);
     ledc_update_duty(BSP_BL_LEDC_MODE, BSP_BL_LEDC_CHANNEL);
+}
+
+esp_err_t bsp_display_sleep(void) {
+    if (!s_panel) return ESP_ERR_INVALID_STATE;
+    // 黑屏不等于下电：先 DISPOFF 再 SLPIN，面板控制器才真正进低功耗。
+    esp_lcd_panel_disp_on_off(s_panel, false);
+    return esp_lcd_panel_disp_sleep(s_panel, true);
+}
+
+esp_err_t bsp_display_wake(void) {
+    if (!s_panel) return ESP_ERR_INVALID_STATE;
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_disp_sleep(s_panel, false), TAG, "面板唤醒失败");
+    return esp_lcd_panel_disp_on_off(s_panel, true);
 }

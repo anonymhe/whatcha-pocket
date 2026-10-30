@@ -47,3 +47,17 @@ lv_display_t *bsp_lvgl_init(void) {
 
 bool bsp_lvgl_lock(int timeout_ms) { return lvgl_port_lock(timeout_ms); }
 void bsp_lvgl_unlock(void)         { lvgl_port_unlock(); }
+
+// LVGL 的 tick 也是 5ms 周期的 esp_timer，和按键扫描是同一个坑：light sleep 醒来后
+// esp_timer 会把睡过去的每一拍都补跑一遍（5 分钟 ≈ 6 万次 lv_tick_inc），把 LVGL
+// 任务堵住，界面和按键一起卡死。入睡前 stop，醒来 resume；resume 会重新起一个周期的
+// 定时器，不补历史。lv_timer_enable(false) 顺带让 lv_timer_handler 空转等待。
+void bsp_lvgl_tick_stop(void) { lvgl_port_stop(); }
+
+// slept_ms 是本次实际睡了多久。定时器停着的时候 lv_tick 不会走，补这一次跳变后
+// 画面上的时钟/倒计时才和真实时间对得上。LVGL 的定时器被打断后只补跑一次而不是
+// 逐拍重放，所以这里可以直接跳完整段睡眠时长。
+void bsp_lvgl_tick_resume(uint32_t slept_ms) {
+    if (slept_ms) lv_tick_inc(slept_ms);
+    lvgl_port_resume();
+}

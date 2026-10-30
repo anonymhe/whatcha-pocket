@@ -188,13 +188,16 @@ static void page_enter(void)
     s_start_tick    = lv_tick_get();
     s_status_timer  = lv_timer_create(status_tick, 500, NULL);
     status_tick(NULL);   // 立即刷一次，避免首帧显示占位文案
-    power_keep_awake(true);   // 同步页全程亮屏，不被 30s 调暗打扰（超时由本页 90s 控制）
+    // 扫码期间既不能调暗也不能入睡：蓝牙链路不跨 light sleep。
+    power_hold(POWER_CAFFEINE, true);
+    power_hold(POWER_RADIO_ACTIVE, true);
     lv_screen_load(s_scr);
 }
 
 static void page_exit(void)
 {
-    power_keep_awake(false);   // 离页恢复正常省电
+    power_hold(POWER_RADIO_ACTIVE, false);
+    power_hold(POWER_CAFFEINE, false);
     ble_sync_adv_end();   // 离页即关蓝牙
     if (s_poll_timer)    { lv_timer_delete(s_poll_timer);    s_poll_timer = NULL; }
     if (s_timeout_timer) { lv_timer_delete(s_timeout_timer); s_timeout_timer = NULL; }

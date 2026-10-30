@@ -221,7 +221,8 @@ static void done_flash_end(lv_timer_t *t)
 static void enter_state(state_t st)
 {
     s_state = st;
-    power_keep_awake(st == ST_FOCUS || st == ST_DONE || st == ST_REST);   /* 计时中常亮，待机/暂停照常调暗 */
+    /* 计时中需要常亮且每秒刷新：申请 caffeine 冻结空闲降级（不走 sleep 路径） */
+    power_hold(POWER_CAFFEINE, st == ST_FOCUS || st == ST_DONE || st == ST_REST);
     if (s_avatar) lv_image_set_src(s_avatar, pomo_img(st));
 
     /* 停 tick（需要时重启） */
@@ -358,7 +359,7 @@ static void page_enter(void)
 
 static void page_exit(void)
 {
-    power_keep_awake(false);
+    power_hold(POWER_CAFFEINE, false);
     if (s_tick_timer)   { lv_timer_delete(s_tick_timer);   s_tick_timer = NULL; }
     if (s_done_timer)   { lv_timer_delete(s_done_timer);   s_done_timer = NULL; }
     if (s_phase2_timer) { lv_timer_delete(s_phase2_timer); s_phase2_timer = NULL; }

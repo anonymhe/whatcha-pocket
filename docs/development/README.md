@@ -17,6 +17,7 @@ This directory contains AI Passport engineering rules and reusable workflows, gr
 - [ble-recovery-compatibility.md](engineering/ble-recovery-compatibility.md): mandatory mini-program BLE install artifact, partition, and bootloader contract.
 - [coding-conventions.md](engineering/coding-conventions.md): source-code and resource conventions.
 - [lvgl-chinese-fonts.md](engineering/lvgl-chinese-fonts.md): the shipped CJK fonts, staying inside their coverage, and Chinese-text troubleshooting.
+- [power-and-sleep.md](engineering/power-and-sleep.md): the idle power ladder (active, dim, standby, sleep, off), which layer decides versus acts, and the light-sleep wake path.
 
 ## CI
 

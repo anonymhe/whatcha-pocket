@@ -2,6 +2,8 @@
 #pragma once
 #include "bsp_button.h"
 #include "lvgl.h"
+// pages.h 直接转发 power.h 的 hold 接口，页面只要 include pages.h 就够。
+#include "power.h"
 
 // 统一颜色（所有页面用这套）
 #define C_BG      0x0F0F1A
@@ -40,5 +42,6 @@ bool page_busy(void);                            // 切页转场进行中（期�
 // 子页面公用：黑底空屏
 lv_obj_t *page_screen_create(void);
 
-// 屏幕亮度（main.c）：on=立刻点亮并暂停自动调暗；off=恢复，从现在起重新计 30 秒
-void power_keep_awake(bool on);
+// 页面在运行期间声明省电需求（power_hold_t，可叠加，退出时必须释放）。
+// POWER_CAFFEINE 冻结空闲降级，POWER_RADIO_ACTIVE 只禁止入睡。详见 power.h。
+void power_hold(power_hold_t hold, bool on);
