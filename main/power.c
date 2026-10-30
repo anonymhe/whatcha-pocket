@@ -22,8 +22,10 @@ static const char *TAG = "power";
 // 空闲超时的默认归宿。需要「长时间关机」的应用把它改成 1 即可。
 #define POWER_ENABLE_DEEP_SLEEP 0
 
-#define BACKLIGHT_ACTIVE  100
-#define BACKLIGHT_DIM     3
+#define BACKLIGHT_ACTIVE   100
+// DIM 与 STANDBY 用同一个亮度：都是「屏幕还看得见，但明显暗下去」。
+// 区别不在亮度而在代价——DIM 时 MCU 还醒着，STANDBY 时 MCU 已进 light sleep。
+#define BACKLIGHT_LOW      10
 
 // 叫醒后的这段时间里，按键事件（多半是同一下的松开）不再交给页面，
 // 否则一次唤醒会顺带点进一个菜单项。
@@ -35,18 +37,52 @@ static sleep_policy_t s_policy;
 static uint32_t       s_holds;
 static uint64_t       s_standby_refresh_us;
 static sleep_stage_t  s_stage = SLEEP_STAGE_ACTIVE;
-static int64_t        s_last_activity_us;
-static int64_t        s_wake_us;
+// 时间戳跨任务读写：按键回调在 button/esp_timer 任务，这里是 LVGL 任务。
+// RV32 上 64 位读写不是单条指令，不加保护会读到撕裂值（超时忽长忽短）。
+static portMUX_TYPE   s_time_lock = portMUX_INITIALIZER_UNLOCKED;
+static int64_t        s_last_activity_us;   // 受 s_time_lock 保护
+static int64_t        s_wake_us;            // 受 s_time_lock 保护
 static bool           s_codec_down;
 
 static bool holds_any(power_hold_t mask) { return (s_holds & (uint32_t)mask) != 0; }
 
-static void mark_activity(void) { s_last_activity_us = esp_timer_get_time(); }
+static void mark_activity(void)
+{
+    const int64_t now = esp_timer_get_time();
+    portENTER_CRITICAL(&s_time_lock);
+    s_last_activity_us = now;
+    portEXIT_CRITICAL(&s_time_lock);
+}
+
+static int64_t last_activity_us(void)
+{
+    portENTER_CRITICAL(&s_time_lock);
+    const int64_t value = s_last_activity_us;
+    portEXIT_CRITICAL(&s_time_lock);
+    return value;
+}
+
+static void set_wake_us(int64_t value)
+{
+    portENTER_CRITICAL(&s_time_lock);
+    s_wake_us = value;
+    portEXIT_CRITICAL(&s_time_lock);
+}
 
 static void apply_stage(sleep_stage_t stage)
 {
     s_stage = stage;
-    bsp_display_backlight(stage == SLEEP_STAGE_ACTIVE ? BACKLIGHT_ACTIVE : BACKLIGHT_DIM);
+
+    if (stage == SLEEP_STAGE_STANDBY) {
+        // 入睡前让 LEDC 带着背光睡下去，否则屏幕只剩一块黑。
+        // 亮度与 DIM 相同，区别只在 MCU 已经睡下。
+        bsp_display_backlight(BACKLIGHT_LOW);
+        bsp_display_backlight_keep_alive(true);
+        return;
+    }
+
+    bsp_display_backlight_keep_alive(false);
+    bsp_display_backlight(stage == SLEEP_STAGE_ACTIVE ? BACKLIGHT_ACTIVE : BACKLIGHT_LOW);
 
     // 回到 ACTIVE 时把 codec 一起拉回来：休眠期间播放请求是被丢弃的。
     if (stage == SLEEP_STAGE_ACTIVE && s_codec_down) {
@@ -91,13 +127,16 @@ bool power_key_activity(void)
 {
     const int64_t now = esp_timer_get_time();
 
-    if (s_wake_us && now - s_wake_us < WAKE_SETTLE_US) return true;
+    portENTER_CRITICAL(&s_time_lock);
+    const int64_t wake = s_wake_us;
+    portEXIT_CRITICAL(&s_time_lock);
+    if (wake && now - wake < WAKE_SETTLE_US) return true;
 
     mark_activity();
 
     if (s_stage == SLEEP_STAGE_ACTIVE) return false;
 
-    s_wake_us = now;
+    set_wake_us(now);
     apply_stage(SLEEP_STAGE_ACTIVE);
     return true;   // 这一下只用来叫醒，不交给页面
 }
@@ -116,7 +155,10 @@ static void enter_standby(void)
         vTaskDelay(pdMS_TO_TICKS(CODEC_SETTLE_MS));
     }
 
-    bsp_display_backlight(0);
+    // 背光是「睡着以后还看得见」的全部来源：先切 KEEP_ALIVE 再入睡。
+    apply_stage(SLEEP_STAGE_STANDBY);
+    ESP_LOGI(TAG, "进入 STANDBY：空闲 %lld s",
+             (esp_timer_get_time() - last_activity_us()) / 1000000);
 
     const bsp_wake_source_t wake = standby_wake_source();
     int64_t slept_us = 0;
@@ -129,14 +171,15 @@ static void enter_standby(void)
 
     // 无论正常唤醒还是被拒，都按「刚操作过」重新计时，别紧接着又睡下去。
     mark_activity();
-    s_wake_us = s_last_activity_us;
+    set_wake_us(last_activity_us());
+
     apply_stage(SLEEP_STAGE_ACTIVE);
 }
 
 void power_service(bool ready)
 {
     const sleep_input_t in = {
-        .idle_us    = esp_timer_get_time() - s_last_activity_us,
+        .idle_us    = esp_timer_get_time() - last_activity_us(),
         .ready      = ready,
         .caffeine   = holds_any(POWER_CAFFEINE),
         .radio_busy = holds_any(POWER_RADIO_ACTIVE),

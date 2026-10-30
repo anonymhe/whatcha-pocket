@@ -104,11 +104,16 @@ esp_err_t bsp_power_light_sleep(const bsp_wake_source_t *source, int64_t *slept_
 {
     ESP_RETURN_ON_ERROR(bsp_power_wake_source_arm(source), TAG, "装唤醒源失败，放弃本次睡眠");
 
+    // 按键组件的 5ms 周期定时器会让 esp_timer 在醒来后逐个补跑漏掉的 tick
+    // （5 分钟 ≈ 6 万次），表现为唤醒后按键失灵。入睡前停掉，醒来立刻恢复。
+    bsp_button_scan_stop();
+
     const int64_t started_us = esp_timer_get_time();
     const esp_err_t sleep_err = esp_light_sleep_start();
     const int64_t elapsed_us = esp_timer_get_time() - started_us;
 
     const esp_err_t restore_err = bsp_power_wake_source_disarm();
+    bsp_button_scan_resume();
     if (slept_us) *slept_us = elapsed_us;
 
     if (sleep_err == ESP_ERR_SLEEP_REJECT) {

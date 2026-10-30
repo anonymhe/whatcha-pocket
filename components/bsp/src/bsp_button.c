@@ -115,3 +115,19 @@ esp_err_t bsp_button_restore_adc(void) {
     if (err != ESP_OK) ESP_LOGE(TAG, "按键 ADC 通道恢复失败 (%s)", esp_err_to_name(err));
     return err;
 }
+
+esp_err_t bsp_button_scan_stop(void) {
+    if (!s_btn[0]) return ESP_ERR_INVALID_STATE;
+    // 停掉组件的周期扫描，避免它跨 light sleep 累积待补跑的 tick。
+    esp_err_t err = iot_button_stop();
+    if (err != ESP_OK) ESP_LOGW(TAG, "按键扫描暂停失败 (%s)", esp_err_to_name(err));
+    return err;
+}
+
+esp_err_t bsp_button_scan_resume(void) {
+    if (!s_btn[0]) return ESP_ERR_INVALID_STATE;
+    // 先恢复扫描再让上层去读电压；顺序反了会先读到唤醒瞬间的悬空值。
+    esp_err_t err = iot_button_resume();
+    if (err != ESP_OK) ESP_LOGW(TAG, "按键扫描恢复失败 (%s)", esp_err_to_name(err));
+    return err;
+}
