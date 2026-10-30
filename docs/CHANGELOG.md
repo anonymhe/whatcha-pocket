@@ -6,6 +6,10 @@
 
 ## Unreleased
 
+- Fixed the wake delay that grew with how long the device had been asleep — after about an hour of light sleep a key press could take up to three seconds to light the screen. On wake the firmware no longer asks LVGL to replay every scheduler period it missed while asleep; each timer is rebased to the present, so the wake cost no longer scales with sleep duration. The screen clock and countdowns still advance by the real elapsed time.
+
+- The standby screen now refreshes its battery readout on its own instead of only updating on the next key press. While in light sleep the device wakes briefly every 30 seconds to redraw, stretching to every 60 seconds once the battery falls to 50 % or below to save power. The refresh interval, the low-battery interval, and the battery threshold are all tunable constants, ready to move into a settings page later.
+
 - Replaced the idle power-down with a five-state ladder so the device no longer keeps its CPU awake doing nothing. Backlight dims after 30 s, the codec powers down and the MCU enters light sleep after 5 min, and any key wakes it in place with the screen still showing what it did before. Deep sleep stays available but is off by default because waking from it reboots the device. Pages that must stay lit and refreshing, such as the Pomodoro timer, now hold a caffeine flag that freezes the ladder instead of merely keeping the backlight on, and the sync screen holds a radio flag that allows dimming but forbids sleeping so a Bluetooth link is never dropped.
 
 - Gave every detail screen the same top bar: page name on the left, battery percentage on the right, drawn by one shared helper along with the divider, so pages can no longer drift apart. The usage guide, which had no battery readout at all, now shows one; Pocket New keeps its position counter in the right corner, now written in hex (`0x01`, `0x02`, ...) in keeping with the retro styling.

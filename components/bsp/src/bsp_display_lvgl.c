@@ -55,9 +55,17 @@ void bsp_lvgl_unlock(void)         { lvgl_port_unlock(); }
 void bsp_lvgl_tick_stop(void) { lvgl_port_stop(); }
 
 // slept_ms 是本次实际睡了多久。定时器停着的时候 lv_tick 不会走，补这一次跳变后
-// 画面上的时钟/倒计时才和真实时间对得上。LVGL 的定时器被打断后只补跑一次而不是
-// 逐拍重放，所以这里可以直接跳完整段睡眠时长。
+// 画面上的时钟/倒计时才和真实时间对得上。
+//
+// 但只补 tick 还不够：lv_tick 一下跳过去一个小时，调度器下一拍会发现每个 lv_timer
+// 都「欠跑了一个小时」，于是在同一次 lv_timer_handler 里把每个周期性 timer 反复补跑
+// 到追平当前时间为止（10ms 周期欠一小时 ≈ 36 万次）。这会把 LVGL 任务堵死数秒，表现
+// 为睡得越久、唤醒越慢。把每个 timer 的 last_run 重置到「现在」，调度器就从当下重新
+// 计时，不再试图重放整段睡眠；时钟/倒计时的正确性已由上面的 lv_tick_inc 保住。
 void bsp_lvgl_tick_resume(uint32_t slept_ms) {
     if (slept_ms) lv_tick_inc(slept_ms);
+    for (lv_timer_t *t = lv_timer_get_next(NULL); t; t = lv_timer_get_next(t)) {
+        lv_timer_reset(t);
+    }
     lvgl_port_resume();
 }

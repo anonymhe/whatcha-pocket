@@ -46,8 +46,9 @@ bool power_key_activity(void);
 // light sleep 并阻塞到被唤醒。
 void power_service(bool ready);
 
-// 进入 STANDBY 时使用的定时唤醒间隔。默认 0（只靠按键）。
-// 若以后要让长期显示的画面定期刷新（例如整分刷新时钟），把它设成刷新周期即可：
+// 进入 STANDBY 时使用的定时唤醒间隔。默认 0 = 不覆盖，由 power.c 按电量自动选间隔
+// （电量充足 30s，低于阈值 60s，阈值与间隔均为 power.c 里的可调常量）。
+// 设成非 0 则强制用该固定周期（留给设置页/调试）。
 // 每次定时醒来会重绘一帧再睡回去，且**不重置空闲计时**，所以设备不会因为定期刷新
 // 而永远回不到 STANDBY。LVGL 的 tick 会在唤醒时补齐睡眠时长，倒计时类画面不会漂移。
 void power_set_standby_refresh_us(uint64_t period_us);

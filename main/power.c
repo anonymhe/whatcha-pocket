@@ -4,6 +4,7 @@
 
 #include "bsp_display.h"
 #include "bsp_power.h"
+#include "bsp_battery.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -32,6 +33,13 @@ static const char *TAG = "power";
 #define WAKE_SETTLE_US  (600LL * 1000)
 // 留给 sfx 任务把 codec 关完，避免 MCU 停在 I2S 还有写入的时候。
 #define CODEC_SETTLE_MS 300
+
+// STANDBY 期间定期醒来重绘一帧（目前只为刷新电量图标）。
+// 电量充足时刷得勤一点；掉到阈值以下就拉长间隔省电。
+// 三个数都设计成可调：以后搬到设置页，或改阈值/间隔，只动这里即可。
+#define STANDBY_REFRESH_US        (30LL * 1000000)   // 默认刷新间隔
+#define STANDBY_REFRESH_LOW_US    (60LL * 1000000)   // 低电量时的刷新间隔
+#define STANDBY_REFRESH_LOW_SOC   50                  // 电量(%)低于等于此值切到低电量间隔
 
 static sleep_policy_t s_policy;
 static uint32_t       s_holds;
@@ -134,10 +142,23 @@ bool power_key_activity(void)
     return true;   // 这一下只用来叫醒，不交给页面
 }
 
+// STANDBY 定期唤醒间隔：电量足够时 30s，掉到阈值以下改 60s。
+// 读电量失败（-1）按「没掉到低电」处理，用默认间隔。
+static uint64_t standby_refresh_period_us(void)
+{
+    const int soc = bsp_battery_soc();
+    if (soc >= 0 && soc <= STANDBY_REFRESH_LOW_SOC) return STANDBY_REFRESH_LOW_US;
+    return STANDBY_REFRESH_US;
+}
+
 static bsp_wake_source_t standby_wake_source(void)
 {
-    if (s_standby_refresh_us == 0) return BSP_WAKE_SOURCE_BUTTON;
-    return bsp_wake_source_button_and_timer(s_standby_refresh_us);
+    // s_standby_refresh_us 非 0 时作为显式覆盖（保留给设置页/调试）；
+    // 否则按电量自动选间隔。
+    const uint64_t period = s_standby_refresh_us ? s_standby_refresh_us
+                                                 : standby_refresh_period_us();
+    if (period == 0) return BSP_WAKE_SOURCE_BUTTON;
+    return bsp_wake_source_button_and_timer(period);
 }
 
 static void enter_standby(void)
@@ -163,7 +184,7 @@ static void enter_standby(void)
 
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "本次未能入睡: %s", esp_err_to_name(err));
-    } else if (s_standby_refresh_us) {
+    } else if (cause == BSP_WAKE_CAUSE_TIMER) {
         ESP_LOGD(TAG, "定期唤醒，睡了 %lld ms", slept_us / 1000);
     }
 
