@@ -13,7 +13,7 @@
 static const char *TAG = "power";
 
 // 降级时间表。STANDBY 从原来的「10 分钟关 codec」提前到 5 分钟进 light sleep：
-// 屏幕灭掉之后再等下去没有收益，真正省电的是 MCU 睡下去那一刻。
+// 屏幕压暗之后再等下去收益很小，真正省电的是 MCU 睡下去那一刻。
 #define DIM_AFTER_US      (30LL * 1000000)
 #define STANDBY_AFTER_US  (5LL * 60 * 1000000)
 #define SLEEP_AFTER_US    (60LL * 60 * 1000000)
@@ -73,15 +73,8 @@ static void apply_stage(sleep_stage_t stage)
 {
     s_stage = stage;
 
-    if (stage == SLEEP_STAGE_STANDBY) {
-        // 入睡前让 LEDC 带着背光睡下去，否则屏幕只剩一块黑。
-        // 亮度与 DIM 相同，区别只在 MCU 已经睡下。
-        bsp_display_backlight(BACKLIGHT_LOW);
-        bsp_display_backlight_keep_alive(true);
-        return;
-    }
-
-    bsp_display_backlight_keep_alive(false);
+    // STANDBY 与 DIM 用同一个亮度：屏幕一直看得见，区别只在 MCU 有没有睡下。
+    // 背光在 light sleep 期间照常输出（见 bsp_display.c），所以这里只需要定亮度。
     bsp_display_backlight(stage == SLEEP_STAGE_ACTIVE ? BACKLIGHT_ACTIVE : BACKLIGHT_LOW);
 
     // 回到 ACTIVE 时把 codec 一起拉回来：休眠期间播放请求是被丢弃的。
@@ -155,21 +148,33 @@ static void enter_standby(void)
         vTaskDelay(pdMS_TO_TICKS(CODEC_SETTLE_MS));
     }
 
-    // 背光是「睡着以后还看得见」的全部来源：先切 KEEP_ALIVE 再入睡。
     apply_stage(SLEEP_STAGE_STANDBY);
     ESP_LOGI(TAG, "进入 STANDBY：空闲 %lld s",
              (esp_timer_get_time() - last_activity_us()) / 1000000);
 
+    // LVGL 的 5ms tick 和按键扫描是同一个坑：不先停掉，醒来后 esp_timer 会把整个
+    // 待机期间欠下的每一拍补跑一遍，LVGL 任务被堵死，界面和按键一起失灵。
+    bsp_lvgl_tick_stop();
     const bsp_wake_source_t wake = standby_wake_source();
     int64_t slept_us = 0;
-    const esp_err_t err = bsp_power_light_sleep(&wake, &slept_us);
+    bsp_wake_cause_t cause = BSP_WAKE_CAUSE_OTHER;
+    const esp_err_t err = bsp_power_light_sleep(&wake, &slept_us, &cause);
+    bsp_lvgl_tick_resume(slept_us > 0 ? (uint32_t)(slept_us / 1000) : 0);
+
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "本次未能入睡: %s", esp_err_to_name(err));
     } else if (s_standby_refresh_us) {
         ESP_LOGD(TAG, "定期唤醒，睡了 %lld ms", slept_us / 1000);
     }
 
-    // 无论正常唤醒还是被拒，都按「刚操作过」重新计时，别紧接着又睡下去。
+    if (err == ESP_OK && cause == BSP_WAKE_CAUSE_TIMER) {
+        // 定时唤醒只是为了重绘：不重置空闲计时，否则「待机中定期刷新」的内容
+        // 每醒一次就把自己续命成 ACTIVE，永远睡不回去。姿态和亮度维持原样，
+        // 让 power_service() 下一次评估时照旧落在 STANDBY。
+        return;
+    }
+
+    // 按键叫醒（或本次没能入睡）：按「刚操作过」重新计时，别紧接着又睡下去。
     mark_activity();
     set_wake_us(last_activity_us());
 

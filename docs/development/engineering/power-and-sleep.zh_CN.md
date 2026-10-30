@@ -13,8 +13,8 @@
 | 状态 | 进入条件 | 做了什么 | 如何结束 |
 | --- | --- | --- | --- |
 | `ACTIVE` | 刚按键，或页面持有 `POWER_CAFFEINE` | 背光 100%，一切照常 | 空闲超时 |
-| `DIM` | 30 秒无按键 | 背光 3%，其余不变 | 任意按键，或继续空闲 |
-| `STANDBY` | 5 分钟无按键 | codec 下电、背光归零，MCU 进 **light sleep** | 任意按键（或可选的定时唤醒） |
+| `DIM` | 30 秒无按键 | 背光 10%，其余不变 | 任意按键，或继续空闲 |
+| `STANDBY` | 5 分钟无按键 | codec 下电、背光 10%，MCU 进 **light sleep** | 任意按键（或可选的定时唤醒） |
 | `SLEEP` | 60 分钟无按键，**默认关闭** | deep sleep；面板、背光、codec、电量计逐个下电 | 按键，但芯片是冷启动 |
 | `OFF` | 用户长按机身电源键 | 硬件断电 | 电源键 |
 
@@ -58,7 +58,9 @@ ST7789 面板在 3.3 V 轨带电时自己按帧刷新 GRAM，所以 light sleep 
 
 如果以后有空闲时也要重绘的界面，例如整分刷新一次的时钟，请在这里设周期，而不是把空闲超时改短。`power_service()` 每次唤醒都会跑一遍，画面重绘完立刻再睡回去。周期要留得足够长，否则省电就白费了：每秒醒一次基本等同于从不入睡。
 
-这类界面要保持可见，背光必须能扛过 light sleep。`bsp_display_backlight_keep_alive(true)` 把 LEDC 通道切到 `LEDC_SLEEP_MODE_KEEP_ALIVE` 并保留当前占空比；时钟源已经是 `LEDC_USE_RC_FAST_CLK`，因为 APB 在睡眠期间停止。这条路径存在，但只经过编译验证，目前没有界面用到它。
+定时唤醒**不算**操作：它不能重置空闲计时，否则会定期刷新的界面每次醒来都把自己续成 `ACTIVE`，永远睡不回去。`bsp_power_light_sleep()` 会回报唤醒原因，`enter_standby()` 在 `BSP_WAKE_CAUSE_TIMER` 时直接返回继续睡，状态与亮度都保持原样。只有按键叫醒（或本次入睡被拒）才重置计时并回到 `ACTIVE`。
+
+这类界面要保持可见，背光必须能扛过 light sleep，而它本来就能：`bsp_display.c` 一次性把 LEDC 通道配成 `LEDC_SLEEP_MODE_KEEP_ALIVE`，时钟源配成 `LEDC_USE_RC_FAST_CLK`（APB 在睡眠期间停止）。运行期不需要任何切换，所以「屏幕亮不亮」只由占空比决定，`STANDBY` 因此只是把占空比压低，而不是关掉输出。
 
 ## 重新打开 deep sleep
 
@@ -80,7 +82,7 @@ Device tests: PASS / FAIL     下面的步骤
 
 host test 覆盖不到、必须上机确认的项：
 
-1. 静置 5 分钟。屏幕变黑、USB-Serial 控制台断开：light sleep 会关掉无线外设和 USB PHY，端口掉线是预期行为，不是崩溃。
+1. 静置 5 分钟。屏幕压到 `DIM` 那一档亮度并停止刷新，USB-Serial 控制台断开：light sleep 会关掉无线外设和 USB PHY，端口掉线是预期行为，不是崩溃。屏上那一帧仍然看得见，因为背光还在输出，面板也仍在自己刷 GRAM。
 2. 按任意键。设备原地唤醒，同一屏画面回来，而且用来唤醒的这一下不会顺带触发当前选中项。
 3. 唤醒后逐个按键，确认三个都还有效。只有一个响应，说明 `bsp_button_restore_adc()` 没跑到或通道配置失败。
 4. 打开同步页等 10 分钟，确认设备**没有**入睡：`POWER_RADIO_ACTIVE` 必须把它挡在 `DIM`。

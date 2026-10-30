@@ -15,8 +15,8 @@ software; `OFF` exists so the ladder is not silently incomplete.
 | State | Entered when | What happens | How it ends |
 | --- | --- | --- | --- |
 | `ACTIVE` | a key was just pressed, or a page holds `POWER_CAFFEINE` | backlight 100%, everything running | idle timeout |
-| `DIM` | 30 s without a key | backlight 3%, everything else unchanged | any key, or longer idle |
-| `STANDBY` | 5 min without a key | codec powered down, backlight 0, MCU enters **light sleep** | any key (or the optional periodic timer) |
+| `DIM` | 30 s without a key | backlight 10%, everything else unchanged | any key, or longer idle |
+| `STANDBY` | 5 min without a key | codec powered down, backlight 10%, MCU enters **light sleep** | any key (or the optional periodic timer) |
 | `SLEEP` | 60 min without a key, **disabled by default** | deep sleep; panel, backlight, codec and gauge are powered down | button press, but the chip cold-boots |
 | `OFF` | the user holds the physical power key | hardware power-off | the power key |
 
@@ -96,11 +96,19 @@ the minute mark, set that period here rather than shortening the idle timeout.
 again immediately. Keep the period long enough not to defeat the savings: one wake
 per second is roughly equivalent to never sleeping.
 
-The backlight has to survive light sleep for such a screen to remain visible.
-`bsp_display_backlight_keep_alive(true)` switches the LEDC channel to
-`LEDC_SLEEP_MODE_KEEP_ALIVE` and keeps the current duty; the timer source is
-already `LEDC_USE_RC_FAST_CLK` because APB stops during sleep. This path exists and
-is tested only through the build; no current screen uses it.
+A timer wake is deliberately not treated as activity: it must not restart the idle
+clock, or a refreshing screen would keep re-qualifying itself as `ACTIVE` and never
+sleep again. `bsp_power_light_sleep()` reports what woke it, and `enter_standby()`
+goes straight back to bed on `BSP_WAKE_CAUSE_TIMER`, leaving the stage and the
+brightness untouched. Only a button wake, or a refused sleep, resets the idle clock
+and returns to `ACTIVE`.
+
+The backlight has to survive light sleep for such a screen to remain visible, and
+it does: `bsp_display.c` configures the LEDC channel once with
+`LEDC_SLEEP_MODE_KEEP_ALIVE` and the timer with `LEDC_USE_RC_FAST_CLK`, because
+APB stops during sleep. Nothing has to be switched at runtime, so brightness is
+the only thing that decides whether the screen is lit. That is also why `STANDBY`
+shortens the duty cycle instead of switching the output off.
 
 ## Turning deep sleep back on
 
@@ -125,9 +133,11 @@ Device tests: PASS / FAIL     the steps below
 
 On-device checks that no host test can cover:
 
-1. Leave the device idle for 5 minutes. The screen goes dark and the USB-Serial
-   console drops: light sleep powers the wireless peripherals and the USB PHY
-   down, so a closed port is expected, not a crash.
+1. Leave the device idle for 5 minutes. The screen dims to the `DIM` level and
+   stops updating, and the USB-Serial console drops: light sleep powers the
+   wireless peripherals and the USB PHY down, so a closed port is expected, not a
+   crash. The frame left on screen stays visible, because the backlight keeps
+   running and the panel refreshes its own GRAM.
 2. Press any key. The device wakes in place, the same screen returns, and the
    key that woke it does not also activate the focused item.
 3. Press keys after waking and confirm all three still work. If only one responds,

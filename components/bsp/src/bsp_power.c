@@ -35,17 +35,22 @@ static esp_err_t wake_pin_as_input(void)
     return gpio_config(&io);
 }
 
+static bsp_wake_cause_t map_wakeup_cause(esp_sleep_wakeup_cause_t cause)
+{
+    switch (cause) {
+    case ESP_SLEEP_WAKEUP_GPIO:      return BSP_WAKE_CAUSE_BUTTON;
+    case ESP_SLEEP_WAKEUP_TIMER:     return BSP_WAKE_CAUSE_TIMER;
+    case ESP_SLEEP_WAKEUP_UNDEFINED: return BSP_WAKE_CAUSE_POWER_ON;
+    default:                         return BSP_WAKE_CAUSE_OTHER;
+    }
+}
+
 bsp_wake_cause_t bsp_power_boot_cause(void)
 {
     if (s_boot_cause_known) return s_boot_cause;
 
     s_boot_cause_known = true;
-    switch (esp_sleep_get_wakeup_cause()) {
-    case ESP_SLEEP_WAKEUP_GPIO:      s_boot_cause = BSP_WAKE_CAUSE_BUTTON;   break;
-    case ESP_SLEEP_WAKEUP_TIMER:     s_boot_cause = BSP_WAKE_CAUSE_TIMER;    break;
-    case ESP_SLEEP_WAKEUP_UNDEFINED: s_boot_cause = BSP_WAKE_CAUSE_POWER_ON; break;
-    default:                         s_boot_cause = BSP_WAKE_CAUSE_OTHER;    break;
-    }
+    s_boot_cause = map_wakeup_cause(esp_sleep_get_wakeup_cause());
     return s_boot_cause;
 }
 
@@ -65,21 +70,42 @@ esp_err_t bsp_power_wake_source_arm(const bsp_wake_source_t *source)
     ESP_RETURN_ON_ERROR(bsp_power_wake_source_check(source), TAG, "唤醒源配置非法");
     if (s_wake_armed) return ESP_OK;
 
+    esp_err_t err = ESP_OK;
+
     if (source->timer_us) {
         ESP_RETURN_ON_ERROR(esp_sleep_enable_timer_wakeup(source->timer_us), TAG,
                             "定时唤醒使能失败");
     }
 
     if (source->button) {
-        ESP_RETURN_ON_ERROR(wake_pin_as_input(), TAG, "GPIO%d 配成唤醒输入失败", (int)WAKE_PIN);
-        ESP_RETURN_ON_ERROR(gpio_wakeup_enable(WAKE_PIN, GPIO_INTR_LOW_LEVEL), TAG,
-                            "GPIO%d 唤醒使能失败", (int)WAKE_PIN);
+        // 任一步失败都要把已经装上的定时器和 GPIO 摘掉，否则调用方拿到错误码后
+        // 不会再调 disarm，sleep 里就留下半个配置。
+        err = wake_pin_as_input();
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "GPIO%d 配成唤醒输入失败: %s", (int)WAKE_PIN, esp_err_to_name(err));
+            goto rollback;
+        }
+        err = gpio_wakeup_enable(WAKE_PIN, GPIO_INTR_LOW_LEVEL);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "GPIO%d 唤醒使能失败: %s", (int)WAKE_PIN, esp_err_to_name(err));
+            goto rollback;
+        }
         // 必须显式打开这个唤醒源：漏调就等于没装按钮唤醒。
-        ESP_RETURN_ON_ERROR(esp_sleep_enable_gpio_wakeup(), TAG, "GPIO 唤醒源使能失败");
+        err = esp_sleep_enable_gpio_wakeup();
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "GPIO 唤醒源使能失败: %s", esp_err_to_name(err));
+            gpio_wakeup_disable(WAKE_PIN);
+            goto rollback;
+        }
     }
 
     s_wake_armed = true;
     return ESP_OK;
+
+rollback:
+    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
+    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_GPIO);
+    return err;
 }
 
 esp_err_t bsp_power_wake_source_disarm(void)
@@ -100,12 +126,14 @@ esp_err_t bsp_power_wake_source_disarm(void)
     return err;
 }
 
-esp_err_t bsp_power_light_sleep(const bsp_wake_source_t *source, int64_t *slept_us)
+esp_err_t bsp_power_light_sleep(const bsp_wake_source_t *source, int64_t *slept_us,
+                                bsp_wake_cause_t *cause)
 {
     ESP_RETURN_ON_ERROR(bsp_power_wake_source_arm(source), TAG, "装唤醒源失败，放弃本次睡眠");
 
     // 按键组件的 5ms 周期定时器会让 esp_timer 在醒来后逐个补跑漏掉的 tick
     // （5 分钟 ≈ 6 万次），表现为唤醒后按键失灵。入睡前停掉，醒来立刻恢复。
+    // 其他周期性 esp_timer（例如 LVGL 的 tick）由调用方负责，见 bsp_power.h。
     bsp_button_scan_stop();
 
     const int64_t started_us = esp_timer_get_time();
@@ -116,6 +144,9 @@ esp_err_t bsp_power_light_sleep(const bsp_wake_source_t *source, int64_t *slept_
     bsp_button_scan_resume();
     if (slept_us) *slept_us = elapsed_us;
 
+    const bsp_wake_cause_t woke_by = map_wakeup_cause(esp_sleep_get_wakeup_cause());
+    if (cause) *cause = woke_by;
+
     if (sleep_err == ESP_ERR_SLEEP_REJECT) {
         ESP_LOGW(TAG, "light sleep 被拒绝（唤醒源冲突？）");
         return sleep_err;
@@ -125,8 +156,7 @@ esp_err_t bsp_power_light_sleep(const bsp_wake_source_t *source, int64_t *slept_
         return sleep_err;
     }
 
-    ESP_LOGI(TAG, "light sleep 醒来：原因=%d，历时 %lld ms",
-             (int)esp_sleep_get_wakeup_cause(), elapsed_us / 1000);
+    ESP_LOGI(TAG, "light sleep 醒来：原因=%d，历时 %lld ms", (int)woke_by, elapsed_us / 1000);
     return restore_err;
 }
 

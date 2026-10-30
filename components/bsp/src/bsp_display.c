@@ -75,9 +75,11 @@ static void backlight_init(void) {
         .timer_sel  = BSP_BL_LEDC_TIMER,
         .duty       = 0,
         .hpoint     = 0,
-        // 默认模式会在 MCU 入睡瞬间掐掉 PWM，背光随之全灭——省电待机要的就是这个，
-        // 但长期点亮的状态下不能这样，所以交给 bsp_display_backlight() 按需切换。
-        .sleep_mode = LEDC_SLEEP_MODE_NO_ALIVE_NO_PD,
+        // 固定选 KEEP_ALIVE：STANDBY（light sleep）期间屏幕要继续亮着，让空闲的画面
+        // 还看得见。这个模式不能按需来回切 —— ledc_channel_config() 只会把它打开，
+        // IDF 没有反向接口把通道退回 NO_ALIVE；所以这里一次配好，之后只改 duty。
+        // 背光的「灭」因此只能靠 bsp_display_backlight(0) 把占空比压到 0。
+        .sleep_mode = LEDC_SLEEP_MODE_KEEP_ALIVE,
     };
     e = ledc_channel_config(&ch);
     if (e != ESP_OK) { ESP_LOGE(TAG, "ledc_channel_config 失败: %s", esp_err_to_name(e)); return; }
@@ -150,29 +152,6 @@ void bsp_display_backlight(uint8_t percent) {
     if (percent > 100) percent = 100;
     uint32_t max_duty = (1u << BSP_BL_LEDC_RES) - 1u;
     uint32_t duty = (max_duty * percent) / 100u;
-    ledc_set_duty(BSP_BL_LEDC_MODE, BSP_BL_LEDC_CHANNEL, duty);
-    ledc_update_duty(BSP_BL_LEDC_MODE, BSP_BL_LEDC_CHANNEL);
-}
-
-void bsp_display_backlight_keep_alive(bool on) {
-    if (!s_bl_ready) return;
-
-    // ledc_channel_config() 会把引脚从 GPIO 睡眠配置里摘出去，睡眠中才不会浮空；
-    // 但它同时按结构体里的 duty 重新装载通道，所以要先把当前占空比存下来再复原。
-    const uint32_t duty = ledc_get_duty(BSP_BL_LEDC_MODE, BSP_BL_LEDC_CHANNEL);
-    ledc_channel_config_t ch = {
-        .gpio_num   = BSP_LCD_BL,
-        .speed_mode = BSP_BL_LEDC_MODE,
-        .channel    = BSP_BL_LEDC_CHANNEL,
-        .timer_sel  = BSP_BL_LEDC_TIMER,
-        .duty       = duty,
-        .hpoint     = 0,
-        .sleep_mode = on ? LEDC_SLEEP_MODE_KEEP_ALIVE : LEDC_SLEEP_MODE_NO_ALIVE_NO_PD,
-    };
-    if (ledc_channel_config(&ch) != ESP_OK) {
-        ESP_LOGE(TAG, "背光睡眠策略切换失败");
-        return;
-    }
     ledc_set_duty(BSP_BL_LEDC_MODE, BSP_BL_LEDC_CHANNEL, duty);
     ledc_update_duty(BSP_BL_LEDC_MODE, BSP_BL_LEDC_CHANNEL);
 }

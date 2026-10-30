@@ -56,12 +56,19 @@ esp_err_t bsp_power_wake_source_disarm(void);
 // ⚠ 只能在持有 CPU 的任务里调用，且调用前所有外设必须空闲：不能有正在进行的
 //   SPI/I2S/I2C 传输。esp_light_sleep_start() 只处理 MCU 侧，停蓝牙、关 codec
 //   都是调用方的责任（见 main/power.c）。
+//
+// 本函数只停按键扫描这一个周期定时器。任何其他 5ms 级的周期 esp_timer（例如
+// LVGL 的 tick）也必须由调用方在调用前后自行停/启：esp_timer 的周期定时器醒来后
+// 会补跑漏掉的每一拍，长时间待机会变成几万次回调，把宿主任务堵死。
 // ---------------------------------------------------------------------------
 
 // slept_us 可为 NULL；非 NULL 时写回本次实际睡了多久（esp_light_sleep_start()
 // 醒来会用 RTC 校准 esp_timer，所以这个差值就是真实睡眠时长）。
+// cause 可为 NULL；非 NULL 时写回本次是被什么叫醒的。调用方据此区分「按键叫醒」
+// 和「定时器叫醒」：后者是一次纯粹的刷新，不应把设备当成刚操作过。
 // 返回 ESP_OK 表示正常睡醒；ESP_ERR_SLEEP_REJECT 表示被拒（唤醒源冲突）。
-esp_err_t bsp_power_light_sleep(const bsp_wake_source_t *source, int64_t *slept_us);
+esp_err_t bsp_power_light_sleep(const bsp_wake_source_t *source, int64_t *slept_us,
+                                bsp_wake_cause_t *cause);
 
 // ---------------------------------------------------------------------------
 // deep sleep：MCU 断电，唤醒即冷启动。

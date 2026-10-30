@@ -9,7 +9,7 @@
 //     │ 30s 无操作
 //   DIM      背光压暗，其余照常；任意按键立刻回 ACTIVE
 //     │ 5min 无操作
-//   STANDBY  MCU 进 light sleep，背光灭；任意按键叫醒并回 ACTIVE
+//   STANDBY  MCU 进 light sleep，背光保持压暗可见；任意按键叫醒并回 ACTIVE
 //     │ 更久无操作（默认关闭，见 power.c 的 POWER_ENABLE_DEEP_SLEEP）
 //   SLEEP    deep sleep，外设逐个下电；唤醒即冷启动
 //   OFF      用户长按机身电源键硬关机。该按键不在 MCU 上，软件既收不到也无法
