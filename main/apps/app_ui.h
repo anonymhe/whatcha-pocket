@@ -32,7 +32,10 @@ void      ui_topbar(lv_obj_t *scr, const char *title);   // 绿色标题 + 右�
 void      ui_topbar_ex(lv_obj_t *scr, const char *title, const lv_font_t *title_font);
 void      ui_footer(lv_obj_t *scr, const char *hint);    // 分隔线 + 灰色居中提示
 
-// 电量读数：右上角电量标签 + 30s 自动刷新定时器。读值不可用（-1）时显示 “--%”。
-// 定时器随标签一起销毁，页面无需自行管理。ui_topbar() 已内含，手写顶栏时单独调用。
+// 电量读数：右上角电量标签。读值不可用（-1）时显示 “--%”。ui_topbar() 已内含，
+// 手写顶栏时单独调用。何时刷新由 power.c 决定（它掌握设备姿态与唤醒节奏），
+// 这里只负责「有哪些标签」和「怎么重绘」——每个加入的标签登记进内部清单，
+// 随屏幕一起销毁时自动注销，页面无需自行管理。见 power.c / power-and-sleep.md。
 lv_obj_t *ui_battery_add(lv_obj_t *parent);
-void      ui_battery_refresh(lv_obj_t *label);   // 立即刷新一次读数
+void      ui_battery_refresh(lv_obj_t *label);   // 立即刷新单个标签
+void      ui_battery_refresh_all(void);          // 重绘当前所有电量标签（供 power.c 调用）
