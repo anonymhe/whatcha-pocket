@@ -234,8 +234,11 @@ static void advertise(void)
     struct ble_gap_adv_params p = { 0 };
     p.conn_mode = BLE_GAP_CONN_MODE_UND;
     p.disc_mode = BLE_GAP_DISC_MODE_GEN;
-    p.itvl_min  = BLE_GAP_ADV_ITVL_MS(1000);   // 同步页只开 ≤90 秒，固定快速广播
-    p.itvl_max  = BLE_GAP_ADV_ITVL_MS(1000);
+    // 同步页只开 ≤90 秒，且期间按 CAFFEINE 常亮不入睡，省那点广播电毫无收益。
+    // 用 200ms 快速广播，微信小程序 onBluetoothDeviceFound 能几乎即时发现本机，
+    // 避免用户扫码后久等（旧值 1000ms 是默认省电态遗留，不适合这个短时发现场景）。
+    p.itvl_min  = BLE_GAP_ADV_ITVL_MS(200);
+    p.itvl_max  = BLE_GAP_ADV_ITVL_MS(200);
     if (rc == 0) rc = ble_gap_adv_start(s_addr_type, NULL, BLE_HS_FOREVER, &p, gap_event, NULL);
     if (rc != 0 && rc != BLE_HS_EALREADY) ESP_LOGE(TAG, "advertise rc=%d", rc);
 }

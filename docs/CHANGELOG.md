@@ -6,6 +6,8 @@
 
 ## Unreleased
 
+- Made the sync screen's device easier for the WeChat mini-program to find. The Bluetooth advertising interval during sync dropped from 1000 ms to 200 ms, so after scanning the QR code the mini-program discovers the device almost immediately instead of leaving the user waiting. The old 1000 ms value was a leftover power-saving default, which buys nothing on the sync screen since it advertises for at most 90 seconds and stays awake the whole time.
+
 - Fixed the wake delay that grew with how long the device had been asleep — after about an hour of light sleep a key press could take up to three seconds to light the screen. On wake the firmware no longer asks LVGL to replay every scheduler period it missed while asleep; each timer is rebased to the present, so the wake cost no longer scales with sleep duration. The screen clock and countdowns still advance by the real elapsed time.
 
 - The standby screen now refreshes its battery readout on its own instead of only updating on the next key press. While in light sleep the device wakes briefly every 30 seconds to redraw, stretching to every 60 seconds once the battery falls to 50 % or below to save power. The refresh interval, the low-battery interval, and the battery threshold are all tunable constants, ready to move into a settings page later.
