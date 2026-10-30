@@ -6,6 +6,8 @@
 
 ## Unreleased
 
+- Ported the upstream CW2017 fuel-gauge profile to the Wanli New Energy 500 mAh cell (profile2 / XIL40X / 2026-10-20), replacing the older 520 mAh bytes so the state-of-charge curve matches the cell the device actually ships with. The exact vendor bytes are archived under `assets/battery/`, the register reads and writes now return `esp_err_t` for clearer failure logs, and a one-line readiness log reports the first SOC and voltage after init.
+
 - Replaced the idle power-down with a five-state ladder so the device no longer keeps its CPU awake doing nothing. Backlight dims after 30 s, the codec powers down and the MCU enters light sleep after 5 min, and any key wakes it in place with the screen still showing what it did before. Deep sleep stays available but is off by default because waking from it reboots the device. Pages that must stay lit and refreshing, such as the Pomodoro timer, now hold a caffeine flag that freezes the ladder instead of merely keeping the backlight on, and the sync screen holds a radio flag that allows dimming but forbids sleeping so a Bluetooth link is never dropped.
 
 - Gave every detail screen the same top bar: page name on the left, battery percentage on the right, drawn by one shared helper along with the divider, so pages can no longer drift apart. The usage guide, which had no battery readout at all, now shows one; Pocket New keeps its position counter in the right corner, now written in hex (`0x01`, `0x02`, ...) in keeping with the retro styling.
