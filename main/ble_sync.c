@@ -32,6 +32,7 @@ static const ble_uuid128_t UUID_RES = WATCHA_UUID(0x04);
 #define RC_BADJSON  0x01
 #define RC_VERSION  0x02
 #define RC_PACKET   0x03
+#define RC_STORE    0x04
 #define MAX_JSON    512
 
 static char        s_id[7];
@@ -119,12 +120,19 @@ static uint8_t apply_json(const uint8_t *buf, size_t len)
 
     char n[33];
     utf8_copy(n, nick->valuestring, 32);
-    store_set_str("p_nick", n);
-    store_set_u32("p_tier", tier);
-    store_set_u32("p_rev", rev);
-    store_set_u32("p_post", post);
-    store_set_u32("p_up", up);
-    store_set_u32("p_ok", 1);
+    // 先清 p_ok 再写数据：这样任何一步失败都留在 p_ok=0（「未同步」），
+    // 不会把旧资料与新字段混成一个「有效」资料。全部写成功后才最后置 p_ok=1。
+    if (!store_set_u32("p_ok", 0) ||
+        !store_set_str("p_nick", n) ||
+        !store_set_u32("p_tier", tier) ||
+        !store_set_u32("p_rev", rev) ||
+        !store_set_u32("p_post", post) ||
+        !store_set_u32("p_up", up) ||
+        !store_set_u32("p_ok", 1)) {
+        ESP_LOGE(TAG, "nvs write failed");
+        rc = RC_STORE;
+        goto out;
+    }
     atomic_store(&s_updated, true);
     ESP_LOGI(TAG, "synced: %s tier=%lu rev=%lu post=%lu up=%lu", n,
              (unsigned long)tier, (unsigned long)rev, (unsigned long)post, (unsigned long)up);
@@ -154,8 +162,11 @@ static int on_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *
     if (which == 3 && ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
         uint8_t pkt[256];
         uint16_t n = 0;
+        // 包超过 256 字节缓冲或长度不足 1 字节：本次传输无法恢复，
+        // 立即回 RC_PACKET 并重置，否则客户端收不到结果只能超时。
         if (ble_hs_mbuf_to_flat(ctxt->om, pkt, sizeof pkt, &n) != 0 || n < 1) {
-            s_bad = true;
+            notify_result(conn, RC_PACKET);
+            s_len = 0; s_expect = 0; s_bad = false;
             return 0;
         }
         uint8_t seq  = pkt[0] & 0x7F;
@@ -174,6 +185,9 @@ static int on_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *
 }
 
 static const struct ble_gatt_svc_def SVCS[] = {
+    // 安全权衡：资料写入特征值不要求配对/加密（无 F_WRITE_ENC/F_WRITE_AUTHEN），
+    // 因此同步页开启期间（≤90 秒、且需用户亲自进页），范围内任何设备都能覆写
+    // 资料。这是为了兼容小程序安装流程的有意取舍；暂无敏感数据，风险可接受。
     {
         .type = BLE_GATT_SVC_TYPE_PRIMARY,
         .uuid = &UUID_SVC.u,
