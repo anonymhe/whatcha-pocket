@@ -308,7 +308,15 @@ static void on_sync(void)
     else ESP_LOGE(TAG, "addr rc=%d", rc);
 }
 
-static void on_reset(int reason) { ESP_LOGW(TAG, "host reset %d", reason); }
+static void on_reset(int reason)
+{
+    ESP_LOGW(TAG, "host reset %d", reason);
+    // 主机复位会丢掉所有连接且不走 DISCONNECT 回调：必须手动清掉陈旧状态，
+    // 否则 on_sync 重新同步后 advertise() 会因 s_conn 仍为真而提前返回，永远不再广播。
+    s_host_ready = false;
+    s_conn = false;
+    s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+}
 
 static void host_task(void *arg)
 {
