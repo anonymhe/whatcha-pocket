@@ -52,6 +52,9 @@
 // ============================================================================
 #define BSP_BTN_ADC_UNIT     ADC_UNIT_1
 #define BSP_BTN_ADC_CHANNEL  ADC_CHANNEL_0    // GPIO0
+// 同一节点的 GPIO 编号。省电时这一脚要临时借给 GPIO 唤醒（见 bsp_power.h），
+// 那时需要能直接喂给 gpio_config() 的名字，而不只是 ADC 通道号。
+#define BSP_BTN_ADC_GPIO     GPIO_NUM_0
 #define BSP_BTN_COUNT        3
 
 // 每键的电压窗口 {min_mV, max_mV};边界取相邻档中点。

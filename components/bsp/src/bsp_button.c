@@ -101,3 +101,17 @@ int bsp_button_read_mv(void) {
     if (adc_cali_raw_to_voltage(s_cali, raw, &mv) != ESP_OK) return -1;
     return mv;
 }
+
+esp_err_t bsp_button_restore_adc(void) {
+    if (!s_adc) return ESP_ERR_INVALID_STATE;
+
+    // adc_oneshot_read() 本身不动引脚，只有 config_channel 里那一步 s_adc_io_init()
+    // 会把 pad 切回模拟功能；所以唤醒后必须重新配一次通道，不能只依赖句柄还在。
+    const adc_oneshot_chan_cfg_t chan = {
+        .atten    = BSP_BTN_ATTEN,
+        .bitwidth = ADC_BITWIDTH_DEFAULT,
+    };
+    esp_err_t err = adc_oneshot_config_channel(s_adc, BSP_BTN_ADC_CHANNEL, &chan);
+    if (err != ESP_OK) ESP_LOGE(TAG, "按键 ADC 通道恢复失败 (%s)", esp_err_to_name(err));
+    return err;
+}

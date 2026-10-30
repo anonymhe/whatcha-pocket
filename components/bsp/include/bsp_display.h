@@ -20,6 +20,17 @@ esp_lcd_panel_io_handle_t bsp_display_io(void);
 // 背光亮度 0..100(%)。LEDC PWM,0=全灭。
 void bsp_display_backlight(uint8_t percent);
 
+// 背光在 light sleep 期间是否继续输出。
+// 关(默认)= 睡下去背光就灭,空闲待机用;开 = 背光维持当前亮度,长期显示用。
+// 只有 RC_FAST 时钟能在睡眠中继续驱动 LEDC,这里已经固定用该时钟。
+// 切换时会保留当前占空比,不会把亮度打回满亮。
+void bsp_display_backlight_keep_alive(bool on);
+
+// 面板进入/退出睡眠(0x10 SLPIN / 0x11 SLPOUT)。深睡前调用可再省一部分电流;
+// light sleep 不需要——面板会自己从 GRAM 继续刷新静态画面。
+esp_err_t bsp_display_sleep(void);
+esp_err_t bsp_display_wake(void);
+
 // ---------------------------------------------------------------------------
 // LVGL 接入(可选层)。必须先 bsp_display_init() 成功后再调。
 // 不想用 LVGL 的开发者可忽略本段,直接用 bsp_display_panel() 自己画。

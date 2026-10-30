@@ -4,6 +4,7 @@
 #include "bsp_pins.h"
 #include "driver/spi_master.h"
 #include "driver/ledc.h"
+#include "esp_check.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_vendor.h"
@@ -60,7 +61,9 @@ static void backlight_init(void) {
         .timer_num       = BSP_BL_LEDC_TIMER,
         .duty_resolution = BSP_BL_LEDC_RES,
         .freq_hz         = BSP_BL_LEDC_FREQ_HZ,
-        .clk_cfg         = LEDC_AUTO_CLK,
+        // 必须显式选 RC_FAST：light sleep 期间要保住 PWM 输出，而 APB 时钟睡下去就没了。
+        // RC_FAST 精度差几个百分点，对 LED 背光无影响。
+        .clk_cfg         = LEDC_USE_RC_FAST_CLK,
     };
     esp_err_t e = ledc_timer_config(&t);
     if (e != ESP_OK) { ESP_LOGE(TAG, "ledc_timer_config 失败: %s", esp_err_to_name(e)); return; }
@@ -72,6 +75,9 @@ static void backlight_init(void) {
         .timer_sel  = BSP_BL_LEDC_TIMER,
         .duty       = 0,
         .hpoint     = 0,
+        // 默认模式会在 MCU 入睡瞬间掐掉 PWM，背光随之全灭——省电待机要的就是这个，
+        // 但长期点亮的状态下不能这样，所以交给 bsp_display_backlight() 按需切换。
+        .sleep_mode = LEDC_SLEEP_MODE_NO_ALIVE_NO_PD,
     };
     e = ledc_channel_config(&ch);
     if (e != ESP_OK) { ESP_LOGE(TAG, "ledc_channel_config 失败: %s", esp_err_to_name(e)); return; }
@@ -146,4 +152,40 @@ void bsp_display_backlight(uint8_t percent) {
     uint32_t duty = (max_duty * percent) / 100u;
     ledc_set_duty(BSP_BL_LEDC_MODE, BSP_BL_LEDC_CHANNEL, duty);
     ledc_update_duty(BSP_BL_LEDC_MODE, BSP_BL_LEDC_CHANNEL);
+}
+
+void bsp_display_backlight_keep_alive(bool on) {
+    if (!s_bl_ready) return;
+
+    // ledc_channel_config() 会把引脚从 GPIO 睡眠配置里摘出去，睡眠中才不会浮空；
+    // 但它同时按结构体里的 duty 重新装载通道，所以要先把当前占空比存下来再复原。
+    const uint32_t duty = ledc_get_duty(BSP_BL_LEDC_MODE, BSP_BL_LEDC_CHANNEL);
+    ledc_channel_config_t ch = {
+        .gpio_num   = BSP_LCD_BL,
+        .speed_mode = BSP_BL_LEDC_MODE,
+        .channel    = BSP_BL_LEDC_CHANNEL,
+        .timer_sel  = BSP_BL_LEDC_TIMER,
+        .duty       = duty,
+        .hpoint     = 0,
+        .sleep_mode = on ? LEDC_SLEEP_MODE_KEEP_ALIVE : LEDC_SLEEP_MODE_NO_ALIVE_NO_PD,
+    };
+    if (ledc_channel_config(&ch) != ESP_OK) {
+        ESP_LOGE(TAG, "背光睡眠策略切换失败");
+        return;
+    }
+    ledc_set_duty(BSP_BL_LEDC_MODE, BSP_BL_LEDC_CHANNEL, duty);
+    ledc_update_duty(BSP_BL_LEDC_MODE, BSP_BL_LEDC_CHANNEL);
+}
+
+esp_err_t bsp_display_sleep(void) {
+    if (!s_panel) return ESP_ERR_INVALID_STATE;
+    // 黑屏不等于下电：先 DISPOFF 再 SLPIN，面板控制器才真正进低功耗。
+    esp_lcd_panel_disp_on_off(s_panel, false);
+    return esp_lcd_panel_disp_sleep(s_panel, true);
+}
+
+esp_err_t bsp_display_wake(void) {
+    if (!s_panel) return ESP_ERR_INVALID_STATE;
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_disp_sleep(s_panel, false), TAG, "面板唤醒失败");
+    return esp_lcd_panel_disp_on_off(s_panel, true);
 }

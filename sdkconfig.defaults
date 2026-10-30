@@ -59,3 +59,11 @@ CONFIG_LV_FONT_UNSCII_16=y
 
 # 按键回调(iot_button)跑在 esp_timer 任务里，页面 enter 在这里建 UI，3.5KB 不够
 CONFIG_ESP_TIMER_TASK_STACK_SIZE=8192
+
+# --- 低功耗(Light sleep) ---
+# 睡眠由应用在空闲超时后主动调用 esp_light_sleep_start()，不使用自动 light sleep，
+# 因此不开 CONFIG_PM_ENABLE：手动入口自己会停/重启任务看门狗并校准 esp_timer。
+#
+# 按键 ADC 节点(GPIO0)已有外部 10k 上拉。深睡时会按唤醒电平自动叠加内部上拉/下拉，
+# 叠上去会把三键分压整体抬高，必须关闭。
+CONFIG_ESP_SLEEP_GPIO_ENABLE_INTERNAL_RESISTORS=n
