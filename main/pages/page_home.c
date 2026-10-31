@@ -3,7 +3,7 @@
 #include "sfx.h"
 #include "storage.h"
 #include "ble_sync.h"
-#include "bsp_battery.h"
+#include "app_battery_gauge.h"
 #include "lvgl.h"
 #include <stdio.h>
 #include <string.h>
@@ -34,6 +34,7 @@ LV_IMAGE_DECLARE(ic_tiles);
 #define BADGE_IY  (NAME_Y + 27)   // badge 在名称下方
 #define ICON_CELL 1               // 点阵图标每点像素（11×11 → 11px 见方）
 #define ICON_W    (11 * ICON_CELL)
+#define HP_ICON_COLOR 0xE05050    // 爱心红：只属于这一行的视觉，不进 pages.h 公共调色板
 
 // RPG 状态区：与头像同缩进（左对齐 AV_X），头像下方三行（HP / ATK+DEF / Coins）。
 // 全部相对定位：行距 SROW_DY，图标宽 ICON_W，数值离图标 STAT_GAP，第二列再偏 STAT_COL2。
@@ -46,9 +47,8 @@ LV_IMAGE_DECLARE(ic_tiles);
 #define SROW3_Y    (SROW2_Y + SROW_DY)          // 第三行 Coins
 #define STAT_DIV_Y (SROW3_Y + 20)               // 状态区下方分隔线
 
-#define HP_BAR_X   (STAT_X + ICON_W + 6)        // HP 血条起点（心形图标之后）
 #define HP_BAR_W   128                          // HP 血条满宽（拉到正常宽度）
-#define HP_BAR_H   ICON_W
+#define HP_BAR_H   ICON_W                       // 血条高 = 图标边长
 #define ATK_X      STAT_X                       // ATK 列
 #define DEF_X      (STAT_X + STAT_COL2)         // DEF 列
 #define COIN_X     STAT_X                       // Coins 列（独立一行，回到首列）
@@ -68,13 +68,13 @@ static lv_obj_t *s_scr;
 static lv_obj_t *s_av;
 static lv_obj_t *s_badge, *s_badge_t;
 static lv_obj_t *s_name;
-static lv_obj_t *s_hp, *s_hp_bar, *s_atk, *s_def, *s_coins;   // RPG 数值
+static lv_obj_t *s_hp_gauge;                                  // RPG 电量计（图标+血槽+百分比）
+static lv_obj_t *s_atk, *s_def, *s_coins;                     // RPG 数值
 #define NITEMS 8
 static lv_obj_t *s_cards[NITEMS];
 static lv_obj_t *s_labels[NITEMS];
 static lv_obj_t *s_descs[NITEMS];
 static lv_obj_t *s_icons[NITEMS];
-static lv_timer_t *s_timer;
 static lv_timer_t *s_sync_timer;
 static int s_sel = 0;
 
@@ -153,20 +153,7 @@ static lv_obj_t *icon_make2(lv_obj_t *parent, const char *const rows[11], int ce
     return box;
 }
 
-// 四维图标点阵（11×11）
-static const char *const ICON_HP[11] = {    // 爱心（左右对称，顶部圆润、底部收尖）
-    "..##...##..", 
-    ".####.####.", 
-    "###########", 
-    "###########",
-    "###########", 
-    "###########", 
-    ".#########.", 
-    "..#######..",
-    "...#####...", 
-    "....###....", 
-    ".....#.....",
-};
+// 三维图标点阵（11×11）；爱心随电量计一起搬到了 app_battery_gauge.c
 static const char *const ICON_ATK[11] = {   // 剑
     "....#....##", 
     ".##..#..###", 
@@ -335,22 +322,6 @@ static void refresh_sel(void)
     }
 }
 
-static void tick(lv_timer_t *t)
-{
-    (void)t;
-    int soc = bsp_battery_soc();
-    char buf[16];
-    if (soc < 0) snprintf(buf, sizeof buf, "--%%");
-    else         snprintf(buf, sizeof buf, "%d%%", soc);
-    lv_label_set_text(s_hp, buf);
-    // HP 血条：按电量宽度 + 绿/黄/红三色（>=50 绿，>=20 黄，否则红）
-    int pct = soc < 0 ? 0 : soc;
-    uint32_t hc = pct >= 50 ? C_GREEN : pct >= 20 ? 0xE6B93C : 0xE05050;
-    lv_obj_set_width(s_hp_bar, HP_BAR_W * pct / 100);
-    lv_obj_set_style_bg_color(s_hp_bar, lv_color_hex(hc), 0);
-    lv_obj_set_style_text_color(s_hp, lv_color_hex(hc), 0);
-}
-
 static void sync_tick(lv_timer_t *t)
 {
     (void)t;
@@ -383,12 +354,10 @@ static void home_enter(void)
     lv_obj_set_style_border_width(s_badge, 1, 0);
     s_badge_t = label(s_badge, "", &font_fusion12, C_MUTED, 0, 0);
 
-    // 第一行 HP：爱心图标 + 血条（绿/黄/红，正常宽度）+ 百分比（16px，与其它 stats 统一）
-    // 图标 11px / 血条 14px / 数值 16px，各自在行内垂直居中对齐
-    lv_obj_set_pos(icon_make(s_scr, ICON_HP, ICON_CELL, 0xE05050), STAT_X, SROW1_Y + 3);
-    block(s_scr, HP_BAR_X, SROW1_Y + 1, HP_BAR_W, HP_BAR_H, C_LINE);   // 血条底槽
-    s_hp_bar = block(s_scr, HP_BAR_X, SROW1_Y + 1, HP_BAR_W, HP_BAR_H, C_GREEN);
-    s_hp = label(s_scr, "--", &font_ps16, C_GREEN, HP_BAR_X + HP_BAR_W + 6, SROW1_Y);
+    // 第一行 HP：爱心图标 + 血条（绿/黄/红）+ 百分比（16px，与其它 stats 统一），
+    // 整行由 app_battery_gauge.c 负责画和刷新；这里只给位置与尺寸。
+    s_hp_gauge = ui_battery_gauge_create(s_scr, STAT_X, SROW1_Y, HP_BAR_W, HP_BAR_H,
+                                         &font_ps16, HP_ICON_COLOR);
 
     // 第二行 ATK / DEF：各自图标 + 原始数值（不换算）
     lv_obj_set_pos(icon_make(s_scr, ICON_ATK, ICON_CELL, C_GREEN), ATK_X, SROW2_Y + 3);
@@ -466,16 +435,14 @@ static void home_enter(void)
     lv_obj_t *l2 = label(s_scr, rec, &font_fusion12, C_MUTED, 0, 0);
     lv_obj_align(l2, LV_ALIGN_TOP_MID, 0, 300);
 
-    s_timer = lv_timer_create(tick, 30000, NULL);
     s_sync_timer = lv_timer_create(sync_tick, 300, NULL);
-    tick(NULL);
     lv_screen_load(s_scr);
 }
 
 static void home_exit(void)
 {
-    if (s_timer)      { lv_timer_delete(s_timer);      s_timer = NULL; }
     if (s_sync_timer) { lv_timer_delete(s_sync_timer); s_sync_timer = NULL; }
+    s_hp_gauge = NULL;   // 随屏幕一起销毁，电量视图注册表在 LV_EVENT_DELETE 里自行摘除
     if (s_scr)        { lv_obj_delete(s_scr);          s_scr = NULL;   }
 }
 
