@@ -96,11 +96,6 @@ static void topbar_paint(void *ctx, int soc)
     lv_label_set_text(label, buf);
 }
 
-void ui_battery_refresh(lv_obj_t *label)
-{
-    topbar_paint(label, bsp_battery_soc());
-}
-
 lv_obj_t *ui_battery_add(lv_obj_t *parent)
 {
     lv_obj_t *l = ui_label(parent, "--%", &font_ps8, C_MUTED);

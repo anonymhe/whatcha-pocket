@@ -46,7 +46,6 @@ typedef void (*ui_battery_paint_t)(void *ctx, int soc);
 
 void      ui_battery_register(lv_obj_t *root, ui_battery_paint_t paint, void *ctx);
 lv_obj_t *ui_battery_add(lv_obj_t *parent);      // 右上角标签，自带注册
-void      ui_battery_refresh(lv_obj_t *label);   // 立即刷新单个顶栏标签
 int       ui_battery_refresh_all(void);          // 重绘所有已注册视图（供 power.c 调用），返回本帧读数
 
 // 读数格式化与配色：顶栏标签和首页血条共用同一套，避免两处规则漂移。

@@ -68,7 +68,6 @@ static lv_obj_t *s_scr;
 static lv_obj_t *s_av;
 static lv_obj_t *s_badge, *s_badge_t;
 static lv_obj_t *s_name;
-static lv_obj_t *s_hp_gauge;                                  // RPG 电量计（图标+血槽+百分比）
 static lv_obj_t *s_atk, *s_def, *s_coins;                     // RPG 数值
 #define NITEMS 8
 static lv_obj_t *s_cards[NITEMS];
@@ -355,9 +354,10 @@ static void home_enter(void)
     s_badge_t = label(s_badge, "", &font_fusion12, C_MUTED, 0, 0);
 
     // 第一行 HP：爱心图标 + 血条（绿/黄/红）+ 百分比（16px，与其它 stats 统一），
-    // 整行由 app_battery_gauge.c 负责画和刷新；这里只给位置与尺寸。
-    s_hp_gauge = ui_battery_gauge_create(s_scr, STAT_X, SROW1_Y, HP_BAR_W, HP_BAR_H,
-                                         &font_ps16, HP_ICON_COLOR);
+    // 整行由 app_battery_gauge.c 负责画和刷新（自注册进电量视图注册表，随屏销毁自
+    // 动注销）；这里只给位置与尺寸，句柄不需要留住。
+    ui_battery_gauge_create(s_scr, STAT_X, SROW1_Y, HP_BAR_W, HP_BAR_H,
+                            &font_ps16, HP_ICON_COLOR);
 
     // 第二行 ATK / DEF：各自图标 + 原始数值（不换算）
     lv_obj_set_pos(icon_make(s_scr, ICON_ATK, ICON_CELL, C_GREEN), ATK_X, SROW2_Y + 3);
@@ -442,7 +442,6 @@ static void home_enter(void)
 static void home_exit(void)
 {
     if (s_sync_timer) { lv_timer_delete(s_sync_timer); s_sync_timer = NULL; }
-    s_hp_gauge = NULL;   // 随屏幕一起销毁，电量视图注册表在 LV_EVENT_DELETE 里自行摘除
     if (s_scr)        { lv_obj_delete(s_scr);          s_scr = NULL;   }
 }
 
