@@ -97,10 +97,10 @@ lv_obj_t *ui_battery_gauge_create(lv_obj_t *parent, int x, int y, int bar_w, int
 
     ui_block(root, bar_x, GAUGE_BAR_DY, bar_w, bar_h, C_LINE);        // 血槽底槽
     g->bar = ui_block(root, bar_x, GAUGE_BAR_DY, bar_w, bar_h, C_GREEN);
-
     g->label = ui_label(root, "--%", font, C_GREEN);
-    lv_obj_set_pos(g->label, bar_x + bar_w + GAUGE_GAP, 0);
     if (!g->bar || !g->label) { lv_obj_delete(root); return NULL; }
+
+    lv_obj_set_pos(g->label, bar_x + bar_w + GAUGE_GAP, 0);
 
     ui_battery_register(root, gauge_paint, g);
     gauge_paint(g, bsp_battery_soc());   // 建好即出数，不用等下一次刷新节奏
