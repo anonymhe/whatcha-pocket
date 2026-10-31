@@ -4,7 +4,6 @@
 
 #include "bsp_display.h"
 #include "bsp_power.h"
-#include "bsp_battery.h"
 #include "app_ui.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -47,6 +46,7 @@ static sleep_policy_t s_policy;
 static uint32_t       s_holds;
 static uint64_t       s_standby_refresh_us;
 static int64_t        s_last_battery_refresh_us;   // 上次重绘电量读数的时刻，只在 LVGL 任务里读写
+static int            s_last_soc = -1;              // 上次重绘时读到的电量，同上（-1 = 读不到）
 static sleep_stage_t  s_stage = SLEEP_STAGE_ACTIVE;
 // 时间戳跨任务读写：按键回调在 button/esp_timer 任务，这里是 LVGL 任务。
 // RV32 上 64 位读写不是单条指令，不加保护会读到撕裂值（超时忽长忽短）。
@@ -146,23 +146,31 @@ bool power_key_activity(void)
 }
 
 // 电量刷新间隔：电量足够时 30s，掉到阈值以下改 60s。
-// 读电量失败（-1）按「没掉到低电」处理，用默认间隔。
+// 用上一次重绘时读到的电量（s_last_soc）做判断，不在这里再读一次 I2C：
+// power_service() 每 500ms 调一次本函数，每次都读电量计等于一直挂着总线。
+// 还没读到过（-1）或读失败时按「没掉到低电」处理，用默认间隔。
 // 唤醒（STANDBY 定时）与屏上重绘（ACTIVE/DIM）共用这个间隔，只有一个来源。
 static uint64_t battery_refresh_period_us(void)
 {
-    const int soc = bsp_battery_soc();
-    if (soc >= 0 && soc <= BATTERY_REFRESH_LOW_SOC) return BATTERY_REFRESH_LOW_US;
+    if (s_last_soc >= 0 && s_last_soc <= BATTERY_REFRESH_LOW_SOC) return BATTERY_REFRESH_LOW_US;
     return BATTERY_REFRESH_US;
 }
 
-// 距上次重绘超过当前间隔就重绘一次屏上所有电量标签。
+// 无条件重绘一次，并把「上次刷新」推到现在。
 // 只在 LVGL 任务里调（power_service / enter_standby 都在该任务），故不需加锁。
+static void refresh_battery_now(void)
+{
+    s_last_battery_refresh_us = esp_timer_get_time();
+    s_last_soc = ui_battery_refresh_all();
+}
+
+// 醒着时的节流：距上次重绘超过当前间隔才重绘一次屏上所有电量视图。
+// 定时唤醒那条路径不走这里——它本就是为刷新而来，见 enter_standby()。
 static void maybe_refresh_battery(void)
 {
     const int64_t now = esp_timer_get_time();
     if (now - s_last_battery_refresh_us < (int64_t)battery_refresh_period_us()) return;
-    s_last_battery_refresh_us = now;
-    ui_battery_refresh_all();
+    refresh_battery_now();
 }
 
 static bsp_wake_source_t standby_wake_source(void)
@@ -203,10 +211,12 @@ static void enter_standby(void)
     }
 
     if (err == ESP_OK && cause == BSP_WAKE_CAUSE_TIMER) {
-        // 定时唤醒就是为了重绘电量读数：刷一次再睡回去。不重置空闲计时，
-        // 否则每醒一次就把自己续命成 ACTIVE，永远睡不回去。姿态和亮度维持原样，
-        // 让 power_service() 下一次评估时照旧落在 STANDBY。
-        maybe_refresh_battery();
+        // 定时唤醒就是为了重绘电量读数：刷一次再睡回去。无条件刷，不走 maybe_*：
+        // 实际睡眠时长比设定值短 sleep_time_adjustment，用「够时间了吗」判断会让
+        // 本该刷新的这一次被跳过，读数就停在第一次。不重置空闲计时，否则每醒一次
+        // 就把自己续命成 ACTIVE，永远睡不回去。姿态和亮度维持原样，让 power_service()
+        // 下一次评估时照旧落在 STANDBY。
+        refresh_battery_now();
         return;
     }
 
