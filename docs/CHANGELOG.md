@@ -6,6 +6,14 @@
 
 ## Unreleased
 
+- The home screen's battery gauge now keeps up with the charge while the device is
+  asleep, instead of freezing at whatever it read at boot. It used to run its own
+  30 s timer, which could never fire during standby: every periodic wake re-times
+  all LVGL timers to the present, and a wake only lasts a few hundred milliseconds.
+  The gauge is now a self-contained module that registers with the same
+  battery-view list as the top-bar percentage, so one schedule owned by the power
+  layer repaints both, standby wakes included.
+
 ## v0.1.3 - 2026-10-31
 
 - Made the sync screen's device easier for the WeChat mini-program to find. The Bluetooth advertising interval during sync dropped from 1000 ms to 200 ms, so after scanning the QR code the mini-program discovers the device almost immediately instead of leaving the user waiting. The old 1000 ms value was a leftover power-saving default, which buys nothing on the sync screen since it advertises for at most 90 seconds and stays awake the whole time.

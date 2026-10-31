@@ -94,25 +94,39 @@ source of truth for *when* the reading updates.
 
 - The cadence is one interval, defined by the `BATTERY_REFRESH_*` constants in
   `power.c`: 30 s normally, stretching to 60 s once the charge is at or below 50 %.
-  `bsp_battery_soc()` returning `-1` is treated as "not low", so a failed read uses
-  the default interval.
+  The interval is chosen from the charge read on the previous repaint, so the
+  500 ms service tick does not poll the gauge over I2C; `-1` (read failed) is
+  treated as "not low" and keeps the default interval.
 - While awake (`ACTIVE`/`DIM`), `power_service()` runs every 500 ms and calls
   `maybe_refresh_battery()`, which repaints only after the interval has elapsed.
 - In `STANDBY`, the same interval is armed as a timer wake alongside the button.
-  `power_set_standby_refresh_us()` leaves this at `0` by default, meaning "do not
-  override, pick the interval by charge". A non-zero value forces a fixed period
-  and is reserved for a settings page or debugging.
+  That wake repaints unconditionally instead of going through the elapsed-time
+  check: the real sleep is `period - sleep_time_adjustment`, so a threshold test
+  would skip the very repaint the wake was armed for. It is still one repaint per
+  period.
+  `power_set_standby_refresh_us()` leaves the period at `0` by default, meaning
+  "do not override, pick the interval by charge". A non-zero value forces a fixed
+  period and is reserved for a settings page or debugging.
 
-The UI side holds no cadence of its own. `main/apps/app_ui.c` keeps a small registry
-of every live battery label; `ui_battery_refresh_all()` repaints them, and a label
-unregisters itself on `LV_EVENT_DELETE`, so the list cannot outlive its screen. This
-is what removed the earlier coupling, where each label carried an independent 30 s
+The UI side holds no cadence of its own. `main/apps/app_ui.c` keeps a registry of
+battery **views**: any widget that shows the charge registers a paint callback and
+`ui_battery_refresh_all()` repaints them all. It returns the reading it painted, so
+`power.c` can price the next interval without a second I2C read. A view unregisters
+itself on `LV_EVENT_DELETE`, so the list cannot outlive its screen. This is what
+removed the earlier coupling, where each label carried an independent 30 s
 `lv_timer` that only produced a visible refresh in `STANDBY` because it happened to
 line up with the wake period.
 
-The home screen's HP-style battery bar is a page-specific widget, not a top-bar
-label, so it keeps its own 30 s timer. It still refreshes correctly on a standby
-wake because the tick-resume path below rebases every LVGL timer to the present.
+Two views live in it today: the top-bar percentage that `ui_topbar()` adds, and the
+home screen's HP-style gauge (`main/apps/app_battery_gauge.c`), which owns the heart
+icon, the bar and the percentage as one widget and is only placed by `page_home.c`.
+Both are repainted together on the same schedule.
+
+That shared schedule is also why no battery view may keep its own `lv_timer`: the
+tick-resume path below rebases every LVGL timer to the present on each standby wake,
+and a wake lasts only a few hundred milliseconds, so a 30 s timer would never reach
+its period and the readout would freeze at its first paint — which is exactly what
+the page-owned timer used to do before it moved into the registry.
 
 A timer wake is deliberately not treated as activity: it must not restart the idle
 clock, or a refreshing screen would keep re-qualifying itself as `ACTIVE` and never
@@ -138,8 +152,10 @@ sleep and try to replay every missed period in one `lv_timer_handler` call (a 10
 timer overdue by an hour is roughly 360k catch-up iterations), freezing the UI for
 seconds and making the wake cost scale with how long the device slept. So
 `bsp_lvgl_tick_resume()` also resets every timer's `last_run` to now, which rebases
-the scheduler to the present without undoing the tick jump. This is also what lets
-the battery and home-screen timers fire promptly on a standby wake.
+the scheduler to the present without undoing the tick jump. That rebase is why the
+battery readout cannot rely on an `lv_timer`: a standby wake is far shorter than the
+refresh period, so such a timer would be re-timed from now on every wake and never
+reach its period.
 
 ## Turning deep sleep back on
 
