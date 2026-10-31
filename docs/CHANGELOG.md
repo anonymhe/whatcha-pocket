@@ -7,12 +7,12 @@
 ## Unreleased
 
 - The home screen's battery gauge now keeps up with the charge while the device is
-  asleep, instead of freezing at whatever it read at boot. It used to run its own
-  30 s timer, which could never fire during standby: every periodic wake re-times
-  all LVGL timers to the present, and a wake only lasts a few hundred milliseconds.
-  The gauge is now a self-contained module that registers with the same
-  battery-view list as the top-bar percentage, so one schedule owned by the power
-  layer repaints both, standby wakes included.
+  asleep, instead of freezing at whatever it read when the page was drawn. It used
+  to run its own 30 s timer, which could never fire during standby: every periodic
+  wake re-times all LVGL timers to the present, and a wake only lasts a few hundred
+  milliseconds. The gauge is now a self-contained module that registers with the
+  same battery-view list as the top-bar percentage, so one schedule owned by the
+  power layer repaints both, standby wakes included.
 
 ## v0.1.3 - 2026-10-31
 

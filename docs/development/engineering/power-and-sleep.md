@@ -113,9 +113,8 @@ battery **views**: any widget that shows the charge registers a paint callback a
 `ui_battery_refresh_all()` repaints them all. It returns the reading it painted, so
 `power.c` can price the next interval without a second I2C read. A view unregisters
 itself on `LV_EVENT_DELETE`, so the list cannot outlive its screen. This is what
-removed the earlier coupling, where each label carried an independent 30 s
-`lv_timer` that only produced a visible refresh in `STANDBY` because it happened to
-line up with the wake period.
+removed the earlier coupling, where each label carried an independent 30 s `lv_timer`
+and the standby reading depended on whether that timer could ever fire.
 
 Two views live in it today: the top-bar percentage that `ui_topbar()` adds, and the
 home screen's HP-style gauge (`main/apps/app_battery_gauge.c`), which owns the heart
