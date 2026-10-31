@@ -74,7 +74,7 @@ lv_obj_t *ui_block(lv_obj_t *parent, int x, int y, int w, int h, uint32_t color)
 
 void ui_battery_text(char *buf, size_t size, int soc)
 {
-    if (!buf || size < 4) return;
+    if (!buf || size < 5) return;   // 装不下完整的 "100%"+NUL 就不动缓冲
     if (soc < 0) snprintf(buf, size, "--%%");
     else         snprintf(buf, size, "%d%%", soc);
 }

@@ -49,5 +49,6 @@ lv_obj_t *ui_battery_add(lv_obj_t *parent);      // 右上角标签，自带注�
 int       ui_battery_refresh_all(void);          // 重绘所有已注册视图（供 power.c 调用），返回本帧读数
 
 // 读数格式化与配色：顶栏标签和首页血条共用同一套，避免两处规则漂移。
+// buf 至少要装得下 "100%" 加 NUL，即 5 字节。
 void     ui_battery_text(char *buf, size_t size, int soc);   // soc < 0 → "--%"
 uint32_t ui_battery_color(int soc);                          // >=50 绿 / >=20 金 / 更低红
