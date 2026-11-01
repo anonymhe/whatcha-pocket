@@ -6,6 +6,8 @@
 
 ## Unreleased
 
+- Ported the upstream CW2017 fuel-gauge profile to the Wanli New Energy 500 mAh cell (profile2 / XIL40X / 2026-10-20), replacing the older 520 mAh bytes so the state-of-charge curve matches the cell the device actually ships with. The exact vendor bytes are archived under `assets/battery/`, the register reads and writes now return `esp_err_t` for clearer failure logs, and a one-line readiness log reports the first SOC and voltage after init.
+
 ## v0.1.3 - 2026-10-31
 
 - Made the sync screen's device easier for the WeChat mini-program to find. The Bluetooth advertising interval during sync dropped from 1000 ms to 200 ms, so after scanning the QR code the mini-program discovers the device almost immediately instead of leaving the user waiting. The old 1000 ms value was a leftover power-saving default, which buys nothing on the sync screen since it advertises for at most 90 seconds and stays awake the whole time.
