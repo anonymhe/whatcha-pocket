@@ -6,6 +6,15 @@
 
 ## Unreleased
 
+- Fixed the standby battery readout freezing at its pre-sleep value. A light-sleep
+  wake whose GPIO-restore step failed returned that failure instead of a plain
+  success, so the power layer misread a perfectly good timer wake as a refused
+  sleep and skipped the scheduled repaint — for hours at a time. The BSP now
+  answers one question only (did the device sleep and wake), logs restore failures
+  separately, and the periodic wake repaint is visible in the default log level.
+  A button wake also repaints the battery immediately instead of waiting for the
+  next 30 s tick.
+
 - The home screen's battery gauge now keeps up with the charge while the device is
   asleep, instead of freezing at whatever it read when the page was drawn. It used
   to run its own 30 s timer, which could never fire during standby: every periodic

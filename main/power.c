@@ -206,8 +206,6 @@ static void enter_standby(void)
 
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "本次未能入睡: %s", esp_err_to_name(err));
-    } else if (cause == BSP_WAKE_CAUSE_TIMER) {
-        ESP_LOGD(TAG, "定期唤醒，睡了 %lld ms", slept_us / 1000);
     }
 
     if (err == ESP_OK && cause == BSP_WAKE_CAUSE_TIMER) {
@@ -217,6 +215,10 @@ static void enter_standby(void)
         // 就把自己续命成 ACTIVE，永远睡不回去。姿态和亮度维持原样，让 power_service()
         // 下一次评估时照旧落在 STANDBY。
         refresh_battery_now();
+        // INFO 级别：这是判断「待机电量为什么不更新」的唯一观测点，降到 DEBUG 会被
+        // 默认日志级别整个编掉，长时间待机测试里刷新回路是否活着无从得知。
+        ESP_LOGI(TAG, "定期唤醒重绘：睡了 %lld ms，屏上电量=%d%%",
+                 slept_us / 1000, s_last_soc);
         return;
     }
 
@@ -225,6 +227,9 @@ static void enter_standby(void)
     set_wake_us(last_activity_us());
 
     apply_stage(SLEEP_STAGE_ACTIVE);
+    // 叫醒后立刻补一帧电量再交给 power_service()：按键路径上一帧可能已是
+    // 半个小时前的读数，醒来第一眼不该是旧值。
+    refresh_battery_now();
 }
 
 void power_service(bool ready)

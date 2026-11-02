@@ -132,7 +132,15 @@ clock, or a refreshing screen would keep re-qualifying itself as `ACTIVE` and ne
 sleep again. `bsp_power_light_sleep()` reports what woke it, and `enter_standby()`
 refreshes the battery then goes straight back to bed on `BSP_WAKE_CAUSE_TIMER`,
 leaving the stage and the brightness untouched. Only a button wake, or a refused
-sleep, resets the idle clock and returns to `ACTIVE`.
+sleep, resets the idle clock and returns to `ACTIVE`, and that path repaints the
+battery right away too.
+
+`bsp_power_light_sleep()` answers one question only: did the MCU sleep. It returns
+`ESP_OK` whenever the device actually slept and woke, even if the wake path's
+restore step (handing GPIO0 back to the ADC) failed; that failure is logged and
+nothing more. Folding the restore error into the return value made the caller
+misread a successful timer wake as a refused sleep, skip the battery repaint, and
+freeze the standby readout at whatever it was before bedtime.
 
 The backlight has to survive light sleep for the screen to remain visible, and
 it does: `bsp_display.c` configures the LEDC channel once with
