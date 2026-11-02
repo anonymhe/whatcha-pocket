@@ -6,3 +6,5 @@ managed_components/
 .idea/
 main/apps/wifi_config.h
 __pycache__/
+build*/
+tmp/
