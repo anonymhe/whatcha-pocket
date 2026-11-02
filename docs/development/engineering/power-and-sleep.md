@@ -95,7 +95,8 @@ Light sleep powers the USB-Serial-JTAG pad and clock down (`SOC_USB_SERIAL_JTAG_
 is not defined for the ESP32-C3), so the endpoint disappears from the bus and the
 serial port drops. That is acceptable for a badge left on a desk, but not while
 someone is debugging it over the same port. The firmware therefore refuses to
-sleep while a real USB host is on the bus, and retries ten minutes later.
+sleep while a real USB host is on the bus, and keeps a ten minute grace period
+after the host is gone.
 
 Detection is not a pin: the board exposes no VBUS sense GPIO, and every usable
 pin is already allocated. Instead the firmware asks the chip, via
@@ -119,8 +120,12 @@ Three properties are worth remembering:
   next periodic wake, 30–60 s later.
 
 `sleep_input_t` carries two related bits. `usb_attached` is the live reading.
-`standby_deferred` covers the ten minutes after a refusal, so unplugging the cable
-does not send the device to sleep the instant the host vanishes.
+`standby_deferred` covers the ten minutes after the host was last seen, so
+unplugging the cable does not send the device to sleep the instant the host
+vanishes. The clock starts at the last sighting rather than at the first refusal,
+because plugging in for two minutes and pulling the cable before the idle ladder
+reaches standby never produces a refusal at all, and starting the back-off only
+at that point would let the device sleep the moment the cable came out.
 Both cap the ladder at `DIM`, exactly like `POWER_RADIO_ACTIVE`; `power.c` also
 re-checks before `esp_light_sleep_start()` and before deep sleep, because up to
 500 ms pass between the decision and the action, which is long enough for an
@@ -240,8 +245,10 @@ On-device checks that no host test can cover:
    confirm it does **not** sleep: the backlight drops to the `DIM` level, the
    console stays alive, and one log line reports the refusal. Repeat with a
    charger only: no host, no SOF, so the device sleeps as usual.
-3. Unplug the cable and wait. The device must not sleep for ten minutes, then
-   must resume the normal ladder. Pressing any key cancels the remaining back-off
+3. Unplug the cable and wait. The device must not sleep for ten minutes after the
+   last moment a host was seen, then must resume the normal ladder. Plugging in
+   for only a minute or two and pulling the cable again must still leave the full
+   ten minutes of back-off. Pressing any key cancels the remaining back-off
    immediately.
 4. Press any key. The device wakes in place, the same screen returns, and the
    key that woke it does not also activate the focused item.
