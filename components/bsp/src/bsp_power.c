@@ -157,7 +157,13 @@ esp_err_t bsp_power_light_sleep(const bsp_wake_source_t *source, int64_t *slept_
     }
 
     ESP_LOGI(TAG, "light sleep 醒来：原因=%d，历时 %lld ms", (int)woke_by, elapsed_us / 1000);
-    return restore_err;
+    // 睡着并醒来了，按 bsp_power.h 的约定返回 ESP_OK：restore 失败只是唤醒路径的
+    // 收尾问题，混进返回值会让调用方把一次成功的定时唤醒误判成「没能入睡」，
+    // 于是跳过电量重绘、把待机读数冻结在入睡前。
+    if (restore_err != ESP_OK) {
+        ESP_LOGE(TAG, "唤醒源恢复失败: %s", esp_err_to_name(restore_err));
+    }
+    return ESP_OK;
 }
 
 esp_err_t bsp_power_prepare_deep_sleep(const bsp_wake_source_t *source)
