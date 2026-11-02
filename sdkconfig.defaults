@@ -39,6 +39,10 @@ CONFIG_LV_FONT_MONTSERRAT_20=y
 CONFIG_LV_MEM_SIZE_KILOBYTES=64
 # 同步页用 LVGL 内置二维码控件渲染小程序 deeplink。
 CONFIG_LV_USE_QRCODE=y
+# I8 索引色图片依赖逐行解码(get_area_cb,行缓冲 w*4 字节)。RAM_LOAD 开启时
+# bin decoder 会把整张 I8 图解成 w*h*4 的 ARGB8888 塞进 64KB LVGL 池,一张 96x96
+# 就要 36KB,必炸。LVGL 默认即为 n,这里显式钉死,防止上游改动悄悄改变内存行为。
+CONFIG_LV_BIN_DECODER_RAM_LOAD=n
 
 # --- 系统 ---
 CONFIG_FREERTOS_HZ=1000

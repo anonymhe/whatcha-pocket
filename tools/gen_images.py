@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import sys
 
 import numpy as np
 
@@ -113,6 +114,35 @@ def quantize(px):
     return palette, index
 
 
+def parse_i8(path):
+    """读回生成的 I8 源，返回 (name, w, h, palette[256,4] RGBA, index[N] uint8)。
+
+    调色板按 lv_color32_t 内存序 {blue,green,red,alpha} 存储，这里转回
+    RGBA 便于与原 RGB565A8 像素直接比对。"""
+    with open(path, 'r', errors='ignore') as f:
+        src = f.read()
+    dsc = DSC_RE.search(src)
+    if not dsc:
+        return None
+    name = dsc.group(1)
+    hdr = HEADER_RE.search(dsc.group(0))
+    if not hdr or hdr.group('cf') != 'LV_COLOR_FORMAT_I8':
+        return None
+    w, h = int(hdr.group('w')), int(hdr.group('h'))
+    stride = int(hdr.group('stride'))
+    m = MAP_RE.search(src)
+    if not m:
+        return None
+    body_start = src.find('{', m.start()) + 1
+    body = src[body_start:src.find('};', body_start)]
+    byts = [int(t.strip(), 16) for t in body.split(',') if t.strip().startswith('0x')]
+    if len(byts) != MAX_PALETTE * 4 + stride * h:
+        raise ValueError(f'{path}: payload {len(byts)} != 1024 + {stride}*{h}')
+    pal = np.array(byts[:MAX_PALETTE * 4], dtype=np.uint8).reshape(MAX_PALETTE, 4)[:, [2, 1, 0, 3]]
+    idx = np.array(byts[MAX_PALETTE * 4:], dtype=np.uint8).reshape(h, stride)[:, :w]
+    return name, w, h, pal, idx.reshape(-1)
+
+
 def emit(name, w, h, palette, index):
     """生成与 lv_img_conv 等价的 I8 C 源。
 
@@ -178,13 +208,72 @@ const lv_image_dsc_t {name} = {{
 ''', total
 
 
+def verify():
+    """把每个 I8 源与转换提交前的 RGB565A8 原版逐像素比对，报告误差。
+
+    基准是「git log 里最早的、该文件仍是 RGB565A8 的版本」：从当前分支
+    历史回溯，找到最近一次内容不含 LV_COLOR_FORMAT_I8 的提交。"""
+    import subprocess
+    files = sorted(f for f in os.listdir(IMAGE_DIR)
+                   if f.endswith('.c') and re.match(r'^(art_|ic_|cha_|logo)', f))
+    checked = unchanged = mismatched = 0
+    for fn in files:
+        path = os.path.join(IMAGE_DIR, fn)
+        rel = fn if len(os.path.commonpath([ROOT, path])) > 0 else path
+        repo_rel = os.path.relpath(path, ROOT).replace(os.sep, '/')
+        if not parse_i8(path):
+            continue
+        base = subprocess.run(
+            ['git', 'log', '--format=%H', '--', repo_rel],
+            capture_output=True, text=True).stdout.split()
+        old = ''
+        for commit in base:
+            blob = subprocess.run(['git', 'show', f'{commit}:{repo_rel}'],
+                                  capture_output=True, text=True).stdout
+            if blob and 'LV_COLOR_FORMAT_I8' not in blob:
+                old = blob
+                break
+        if not old:
+            print(f'  {fn}: git 历史里找不到 RGB565A8 原版，跳过')
+            continue
+        tmp = path + '.orig'
+        with open(tmp, 'w', newline='\n') as f:
+            f.write(old)
+        parsed = parse_rgb565a8(tmp)
+        os.remove(tmp)
+        if not parsed:
+            print(f'  {fn}: HEAD 原版不是 RGB565A8，跳过')
+            continue
+        _, w, h, orig = parsed
+        orig = orig.reshape(h, w, 4)
+        _, _, _, pal, idx = parse_i8(path)
+        dec = pal[idx].reshape(h, w, 4)
+        diff = np.abs(dec.astype(np.int16) - orig.astype(np.int16))
+        mask = (orig[:, :, 3] > 0) | (dec[:, :, 3] > 0)
+        d = diff[mask]
+        checked += 1
+        if len(d) == 0 or d.max() == 0:
+            print(f'  OK       {fn}')
+        else:
+            mismatched += 1
+            print(f'  MISMATCH {fn}  max={d.max()}  mean={d.mean():.2f}')
+    others = len(files) - checked
+    print(f'\n比对了 {checked} 张 I8，其余 {others} 张保持 RGB565A8 未动')
+    return 1 if mismatched else 0
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--check', action='store_true',
                     help='只报告体积变化，不写文件')
     ap.add_argument('--force', action='store_true',
-                    help='超过 255 色的图也有损转换（默认拒绝）')
+                    help='超过 255 色的图也有损转换：低频色会被静默丢弃，'
+                         '对应像素变全透明（非最近色合并），不推荐使用')
+    ap.add_argument('--verify', action='store_true',
+                    help='重读已转换的 I8 源，与 git HEAD 里的 RGB565A8 原版逐像素比对')
     args = ap.parse_args()
+    if args.verify:
+        sys.exit(verify())
 
     files = sorted(f for f in os.listdir(IMAGE_DIR)
                    if f.endswith('.c') and re.match(r'^(art_|ic_|cha_|logo)', f))
