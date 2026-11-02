@@ -42,6 +42,11 @@ static const char *TAG = "power";
 #define BATTERY_REFRESH_LOW_US    (60LL * 1000000)   // 低电量时的刷新间隔
 #define BATTERY_REFRESH_LOW_SOC   50                  // 电量(%)低于等于此值切到低电量间隔
 
+// 检测到 USB 主机在场时拒绝入睡，并把入睡再推迟这么久。
+// 插着线调试时设备每 10 分钟才重新试探一次，既不打断串口，也不会因为一直
+// 不睡而白耗电——USB 供电本来就不吃电池。
+#define USB_STANDBY_DEFER_US  (10LL * 60 * 1000000)
+
 static sleep_policy_t s_policy;
 static uint32_t       s_holds;
 static uint64_t       s_standby_refresh_us;
@@ -53,6 +58,8 @@ static sleep_stage_t  s_stage = SLEEP_STAGE_ACTIVE;
 static portMUX_TYPE   s_time_lock = portMUX_INITIALIZER_UNLOCKED;
 static int64_t        s_last_activity_us;   // 受 s_time_lock 保护
 static int64_t        s_wake_us;            // 受 s_time_lock 保护
+// 因 USB 主机在场被拒睡之后的退避截止时刻；0 = 没有退避。受 s_time_lock 保护。
+static int64_t        s_usb_defer_until_us;
 static bool           s_codec_down;
 
 static bool holds_any(power_hold_t mask) { return (s_holds & (uint32_t)mask) != 0; }
@@ -62,6 +69,8 @@ static void mark_activity(void)
     const int64_t now = esp_timer_get_time();
     portENTER_CRITICAL(&s_time_lock);
     s_last_activity_us = now;
+    // 用户刚操作过：USB 退避作废，之后按正常的 5 分钟节奏重新走。
+    s_usb_defer_until_us = 0;
     portEXIT_CRITICAL(&s_time_lock);
 }
 
@@ -71,6 +80,33 @@ static int64_t last_activity_us(void)
     const int64_t value = s_last_activity_us;
     portEXIT_CRITICAL(&s_time_lock);
     return value;
+}
+
+static bool usb_defer_active(void)
+{
+    const int64_t now = esp_timer_get_time();
+    portENTER_CRITICAL(&s_time_lock);
+    const bool active = s_usb_defer_until_us != 0 && now < s_usb_defer_until_us;
+    portEXIT_CRITICAL(&s_time_lock);
+    return active;
+}
+
+static void defer_standby_for_usb(void)
+{
+    const int64_t now = esp_timer_get_time();
+    portENTER_CRITICAL(&s_time_lock);
+    const bool already_deferred = s_usb_defer_until_us != 0 && now < s_usb_defer_until_us;
+    // 截止时刻每次都推到「现在 + 10 分钟」，而不是只在被拒的那一刻算一次：
+    // 这样即便在待机中途拔线，也要再过满 10 分钟才会入睡。
+    s_usb_defer_until_us = now + USB_STANDBY_DEFER_US;
+    portEXIT_CRITICAL(&s_time_lock);
+
+    // 只在从「没有退避」进入「有退避」时打一行：本函数每个 500ms 节拍都会调，
+    // 逐次打日志会把串口刷满，而串口正是 USB 在场时要保住的那个东西。
+    if (!already_deferred) {
+        ESP_LOGI(TAG, "USB 主机在场，暂缓进入 light sleep，%lld 分钟后再试",
+                 USB_STANDBY_DEFER_US / 60000000);
+    }
 }
 
 static void set_wake_us(int64_t value)
@@ -185,6 +221,14 @@ static bsp_wake_source_t standby_wake_source(void)
 
 static void enter_standby(void)
 {
+    // 最后一道闸：走到这里时 USB 仍有可能刚插上（判据与动作之间有最多 500ms 的
+    // 间隔，足够一次枚举）。真要睡了才发现，串口就断在用户面前。
+    if (bsp_power_usb_host_attached()) {
+        defer_standby_for_usb();
+        if (s_stage != SLEEP_STAGE_DIM) apply_stage(SLEEP_STAGE_DIM);
+        return;
+    }
+
     if (!s_codec_down) {
         sfx_sleep();
         s_codec_down = true;
@@ -234,19 +278,43 @@ static void enter_standby(void)
 
 void power_service(bool ready)
 {
+    const int64_t idle_us = esp_timer_get_time() - last_activity_us();
+    const bool usb_attached = bsp_power_usb_host_attached();
+
+    // 到了本来该入睡的时刻却有 USB 主机在场：拒绝这一次，并把入睡时间往后推。
+    // 判据本身已经把阶梯封顶在 DIM，所以这里不是「再拦一次」，而是要把退避时间
+    // 真的记下来 —— 否则一拔线就会立刻睡过去，而不是再等满 10 分钟。
+    if (usb_attached && idle_us >= s_policy.standby_after_us) defer_standby_for_usb();
+
     const sleep_input_t in = {
-        .idle_us    = esp_timer_get_time() - last_activity_us(),
-        .ready      = ready,
-        .caffeine   = holds_any(POWER_CAFFEINE),
-        .radio_busy = holds_any(POWER_RADIO_ACTIVE),
+        .idle_us          = idle_us,
+        .ready            = ready,
+        .caffeine         = holds_any(POWER_CAFFEINE),
+        .radio_busy       = holds_any(POWER_RADIO_ACTIVE),
+        .usb_attached     = usb_attached,
+        .standby_deferred = usb_defer_active(),
     };
     const sleep_stage_t next = sleep_policy_stage(&s_policy, &in);
 
     if (next == SLEEP_STAGE_STANDBY) {
+        // 判据已经挡过一道，这里再确认一次：判据与动作之间有最多一个服务周期，
+        // 足够一次枚举开始。拒绝时保持 DIM 姿态，不拉满亮度（插着线时屏幕突然
+        // 变亮很扎眼），只把入睡时间推后。
+        if (bsp_power_usb_host_attached()) {
+            defer_standby_for_usb();
+            if (s_stage != SLEEP_STAGE_DIM) apply_stage(SLEEP_STAGE_DIM);
+            return;
+        }
         enter_standby();   // 阻塞到被唤醒，醒来即回 ACTIVE
         return;
     }
     if (next == SLEEP_STAGE_SLEEP) {
+        // deep sleep 同一个道理：睡下去同样会断掉 USB，USB 在场时跳过。
+        if (bsp_power_usb_host_attached()) {
+            defer_standby_for_usb();
+            if (s_stage != SLEEP_STAGE_DIM) apply_stage(SLEEP_STAGE_DIM);
+            return;
+        }
         // deep sleep 不会返回；唤醒源装不上时降级为普通空闲，继续跑。
         (void)power_deep_sleep();
         return;
@@ -260,6 +328,12 @@ void power_service(bool ready)
 
 bool power_deep_sleep(void)
 {
+    // 显式关机同样不该把正在通信的 USB 掐掉：与 light sleep 走同一条闸门。
+    if (bsp_power_usb_host_attached()) {
+        defer_standby_for_usb();
+        if (s_stage != SLEEP_STAGE_DIM) apply_stage(SLEEP_STAGE_DIM);
+        return false;
+    }
     if (bsp_power_prepare_deep_sleep(&BSP_WAKE_SOURCE_BUTTON) != ESP_OK) {
         ESP_LOGE(TAG, "唤醒源准备失败，放弃关机");
         return false;

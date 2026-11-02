@@ -13,6 +13,10 @@
 // STANDBY 走 light sleep：RAM 与面板 GRAM 都在，屏幕画面保持不动，按键叫醒后
 // 从原处继续，不重建界面。SLEEP 是真正的 deep sleep（冷启动），默认不启用。
 //
+// USB 主机在场（插在电脑上、总线上有 SOF 通信）时，阶梯封顶在 DIM：light sleep
+// 会关掉 USB-Serial-JTAG 的 pad 与时钟，串口和枚举一起消失。只插充电头不算在场，
+// 因为那上面没有主机、没有 SOF。每拒绝一次，入睡时间顺延 10 分钟。
+//
 // OFF 是长按机身电源键的硬关机。该按键不在 MCU 上，软件收不到也进不去，
 // 因此本模块不提供对应接口，只在 sleep_policy.h 状态集中保留这一态。
 #pragma once
@@ -55,5 +59,5 @@ void power_service(bool ready);
 void power_set_standby_refresh_us(uint64_t period_us);
 
 // 显式深睡（SLEEP 态）。默认没有代码路径调用它；失败时返回 false 并继续运行，
-// 不会静默睡死。
+// 不会静默睡死。USB 主机在场时同样直接返回 false：深睡一样会断掉 USB 枚举。
 bool power_deep_sleep(void);
