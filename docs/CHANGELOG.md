@@ -6,6 +6,14 @@
 
 ## Unreleased
 
+## v0.1.4 - 2026-11-02
+
+- Fixed the standby battery readout freezing at its pre-sleep value. A light-sleep wake whose screen-restore step failed reported that failure instead of a plain success, so the power layer misread a perfectly good timer wake as a refused sleep and skipped the scheduled repaint, sometimes for hours. The board layer now answers one question only (did the device sleep and wake), logs restore failures separately, and the periodic wake repaint is visible in the default log level. A button wake also repaints the battery immediately instead of waiting for the next 30 s tick.
+
+- The home screen's battery gauge now keeps up with the charge while the device is asleep, instead of freezing at whatever it read when the page was drawn. It used to run its own 30 s timer, which could never fire during standby: every periodic wake re-times all screen timers to the present, and a wake only lasts a few hundred milliseconds. The gauge is now a self-contained module that registers with the same battery-view list as the top-bar percentage, so one schedule owned by the power layer repaints both, standby wakes included.
+
+- The battery percentage and the home gauge no longer go blank when a reading is momentarily missing or the gauge cannot be created; the top bar keeps its reserved width and the home screen draws without its gauge instead of restarting.
+
 - Ported the upstream CW2017 fuel-gauge profile to the Wanli New Energy 500 mAh cell (profile2 / XIL40X / 2026-10-20), replacing the older 520 mAh bytes so the state-of-charge curve matches the cell the device actually ships with. The exact vendor bytes are archived under `assets/battery/`, the register reads and writes now return `esp_err_t` for clearer failure logs, and a one-line readiness log reports the first SOC and voltage after init.
 
 ## v0.1.3 - 2026-10-31
