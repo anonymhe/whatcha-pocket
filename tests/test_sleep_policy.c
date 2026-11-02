@@ -17,6 +17,19 @@ static sleep_input_t input(int64_t idle_us, bool ready, bool caffeine, bool radi
         .ready = ready,
         .caffeine = caffeine,
         .radio_busy = radio_busy,
+        .usb_attached = false,
+        .standby_deferred = false,
+    };
+}
+
+// USB 相关的两路输入单独成型，避免每个用例都摆一遍 6 个字段。
+static sleep_input_t usb_input(int64_t idle_us, bool usb_attached, bool standby_deferred)
+{
+    return (sleep_input_t){
+        .idle_us = idle_us,
+        .ready = true,
+        .usb_attached = usb_attached,
+        .standby_deferred = standby_deferred,
     };
 }
 
@@ -49,6 +62,34 @@ int main(void)
     assert(stage(&p, input(0, true, false, true)) == SLEEP_STAGE_ACTIVE);
     assert(stage(&p, input(1000, true, false, true)) == SLEEP_STAGE_DIM);
     assert(stage(&p, input(999999, true, false, true)) == SLEEP_STAGE_DIM);
+
+    // USB 主机在场：与蓝牙同为「封顶 DIM」，但未操作时仍要能亮着。
+    assert(stage(&p, usb_input(0, true, false)) == SLEEP_STAGE_ACTIVE);
+    assert(stage(&p, usb_input(999, true, false)) == SLEEP_STAGE_ACTIVE);
+    assert(stage(&p, usb_input(1000, true, false)) == SLEEP_STAGE_DIM);
+    assert(stage(&p, usb_input(5000, true, false)) == SLEEP_STAGE_DIM);
+    assert(stage(&p, usb_input(20000, true, false)) == SLEEP_STAGE_DIM);
+    assert(stage(&p, usb_input(999999, true, false)) == SLEEP_STAGE_DIM);
+
+    // 退避期：即便 USB 已经不在了（刚拔线），这段时间同样不入睡。
+    assert(stage(&p, usb_input(0, false, true)) == SLEEP_STAGE_ACTIVE);
+    assert(stage(&p, usb_input(1000, false, true)) == SLEEP_STAGE_DIM);
+    assert(stage(&p, usb_input(5000, false, true)) == SLEEP_STAGE_DIM);
+    assert(stage(&p, usb_input(999999, false, true)) == SLEEP_STAGE_DIM);
+
+    // 两路同时为假时，阶梯必须与原来逐字一致（新增输入不能有副作用）。
+    assert(stage(&p, usb_input(5000, false, false)) == SLEEP_STAGE_STANDBY);
+    assert(stage(&p, usb_input(20000, false, false)) == SLEEP_STAGE_SLEEP);
+    assert(stage(&p, usb_input(999, false, false)) == SLEEP_STAGE_ACTIVE);
+    assert(stage(&p, usb_input(1000, false, false)) == SLEEP_STAGE_DIM);
+
+    // caffeine 优先级最高：USB 在场时也一样冻结在 ACTIVE。
+    assert(stage(&p, (sleep_input_t){ .idle_us = 999999, .ready = true,
+                                      .caffeine = true, .usb_attached = true,
+                                      .standby_deferred = true }) == SLEEP_STAGE_ACTIVE);
+    // 开机动画未结束时 USB 检测也无权让屏幕降级。
+    assert(stage(&p, (sleep_input_t){ .idle_us = 999999, .ready = false,
+                                      .usb_attached = true }) == SLEEP_STAGE_ACTIVE);
 
     // 时钟回绕（负空闲）按刚操作过处理。
     assert(stage(&p, input(-1, true, false, false)) == SLEEP_STAGE_ACTIVE);

@@ -40,6 +40,8 @@ typedef struct {
     bool    ready;        // 开机动画已结束；未就绪时任何降级都不做
     bool    caffeine;     // 页面要求常亮且及时刷新（番茄钟、计时类）
     bool    radio_busy;   // 蓝牙广播或连接中
+    bool    usb_attached; // 有一个真实的 USB 主机在通信（插着充电头不算）
+    bool    standby_deferred; // 上一次因 USB 在场被拒绝入睡，退避期还没到
 } sleep_input_t;
 
 // 阈值非法（负数、或后一段早于前一段）时按前一段的值修正，
@@ -47,8 +49,10 @@ typedef struct {
 void sleep_policy_init(sleep_policy_t *policy, int64_t dim_after_us,
                        int64_t standby_after_us, int64_t sleep_after_us);
 
-// 判据顺序即优先级：未就绪 > caffeine > radio > 空闲时长。
+// 判据顺序即优先级：未就绪 > caffeine > radio > USB > 退避 > 空闲时长。
 //   ready=false     → ACTIVE（开机动画期间不暗屏）
 //   caffeine=true   → ACTIVE（计时类页面既不能暗也不能睡）
 //   radio_busy=true → 最多 DIM（蓝牙链路不跨 sleep，只能压暗）
+//   usb_attached    → 最多 DIM（USB 主机在场时睡下去会断开枚举与串口）
+//   standby_deferred→ 最多 DIM（退避期内不重复尝试入睡）
 sleep_stage_t sleep_policy_stage(const sleep_policy_t *policy, const sleep_input_t *in);
