@@ -55,7 +55,12 @@ Pages never talk to the BSP sleep layer. They call `power_hold()` from
   must not be dimmed and must never reach `STANDBY`. Releasing it restarts the
   idle clock from that moment.
 - `POWER_RADIO_ACTIVE` allows dimming but forbids sleeping. BLE links do not
-  survive a sleep, so the sync screen holds it while it advertises.
+  survive a sleep, so the sync screen holds it while it advertises. The BLE link
+  itself is released as soon as sync succeeds (`ble_sync_release_link()` in the
+  completion handler), not only on page exit, so the phone is dropped
+  immediately instead of lingering through the two-second "done" prompt. The
+  NimBLE host stays resident for the device lifetime — only advertising and the
+  active connection are toggled per page.
 
 Both are bit flags and stack. A page that forgets to release a hold leaves the
 device unable to sleep, which is why every hold has a matching release on the

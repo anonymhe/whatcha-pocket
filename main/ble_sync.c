@@ -32,6 +32,7 @@ static const ble_uuid128_t UUID_RES = WATCHA_UUID(0x04);
 #define RC_BADJSON  0x01
 #define RC_VERSION  0x02
 #define RC_PACKET   0x03
+#define RC_STORE    0x04
 #define MAX_JSON    512
 
 static char        s_id[7];
@@ -42,6 +43,7 @@ static uint16_t    s_res_handle;
 static atomic_bool s_updated;
 
 static volatile bool s_conn = false;      // 已连接
+static volatile uint16_t s_conn_handle = BLE_HS_CONN_HANDLE_NONE;  // 当前连接句柄，断链用
 static volatile bool s_host_ready = false;  // NimBLE 主机已同步、地址就绪
 static volatile bool s_adv = false;        // 同步页要求广播中（只在同步页为真）
 
@@ -119,12 +121,19 @@ static uint8_t apply_json(const uint8_t *buf, size_t len)
 
     char n[33];
     utf8_copy(n, nick->valuestring, 32);
-    store_set_str("p_nick", n);
-    store_set_u32("p_tier", tier);
-    store_set_u32("p_rev", rev);
-    store_set_u32("p_post", post);
-    store_set_u32("p_up", up);
-    store_set_u32("p_ok", 1);
+    // 先清 p_ok 再写数据：这样任何一步失败都留在 p_ok=0（「未同步」），
+    // 不会把旧资料与新字段混成一个「有效」资料。全部写成功后才最后置 p_ok=1。
+    if (!store_set_u32("p_ok", 0) ||
+        !store_set_str("p_nick", n) ||
+        !store_set_u32("p_tier", tier) ||
+        !store_set_u32("p_rev", rev) ||
+        !store_set_u32("p_post", post) ||
+        !store_set_u32("p_up", up) ||
+        !store_set_u32("p_ok", 1)) {
+        ESP_LOGE(TAG, "nvs write failed");
+        rc = RC_STORE;
+        goto out;
+    }
     atomic_store(&s_updated, true);
     ESP_LOGI(TAG, "synced: %s tier=%lu rev=%lu post=%lu up=%lu", n,
              (unsigned long)tier, (unsigned long)rev, (unsigned long)post, (unsigned long)up);
@@ -154,8 +163,11 @@ static int on_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *
     if (which == 3 && ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
         uint8_t pkt[256];
         uint16_t n = 0;
+        // 包超过 256 字节缓冲或长度不足 1 字节：本次传输无法恢复，
+        // 立即回 RC_PACKET 并重置，否则客户端收不到结果只能超时。
         if (ble_hs_mbuf_to_flat(ctxt->om, pkt, sizeof pkt, &n) != 0 || n < 1) {
-            s_bad = true;
+            notify_result(conn, RC_PACKET);
+            s_len = 0; s_expect = 0; s_bad = false;
             return 0;
         }
         uint8_t seq  = pkt[0] & 0x7F;
@@ -174,6 +186,9 @@ static int on_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *
 }
 
 static const struct ble_gatt_svc_def SVCS[] = {
+    // 安全权衡：资料写入特征值不要求配对/加密（无 F_WRITE_ENC/F_WRITE_AUTHEN），
+    // 因此同步页开启期间（≤90 秒、且需用户亲自进页），范围内任何设备都能覆写
+    // 资料。这是为了兼容小程序安装流程的有意取舍；暂无敏感数据，风险可接受。
     {
         .type = BLE_GATT_SVC_TYPE_PRIMARY,
         .uuid = &UUID_SVC.u,
@@ -197,12 +212,14 @@ static int gap_event(struct ble_gap_event *e, void *arg)
     switch (e->type) {
     case BLE_GAP_EVENT_CONNECT:
         ESP_LOGI(TAG, "connect %s", e->connect.status == 0 ? "ok" : "fail");
-        if (e->connect.status != 0) { if (s_adv) advertise(); } else s_conn = true;
+        if (e->connect.status != 0) { if (s_adv) advertise(); }
+        else { s_conn = true; s_conn_handle = e->connect.conn_handle; }
         s_len = 0; s_expect = 0; s_bad = false;
         break;
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGI(TAG, "disconnect");
         s_conn = false;
+        s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
         if (s_adv) advertise();   // 仍在同步页：继续等下一次连接；离页后 s_adv=false 不再重播
         break;
     case BLE_GAP_EVENT_ADV_COMPLETE:
@@ -243,23 +260,38 @@ static void advertise(void)
     if (rc != 0 && rc != BLE_HS_EALREADY) ESP_LOGE(TAG, "advertise rc=%d", rc);
 }
 
+// 停广播 + 断当前连接。s_adv 置假后 GAP 的 disconnect/adv_complete 回调不再重新广播，
+// 设备彻底不可见。NimBLE 主机仍常驻。分包重组状态（s_len/s_expect/s_bad）是 host 任务专有，
+// 不在这里（UI 任务）清；新一次传输会在 host 任务的 CONNECT 与 seq==0 处自行复位。
+static void stop_link(void)
+{
+    s_adv = false;
+    ble_gap_adv_stop();
+    if (s_conn) ble_gap_terminate(s_conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+}
+
 // 进同步页：开始广播（只有此时蓝牙才可被发现/连接）。
 void ble_sync_adv_begin(void)
 {
     if (s_adv) return;
     s_adv = true;
-    s_len = 0; s_expect = 0; s_bad = false;
     if (s_host_ready) advertise();
     ESP_LOGI(TAG, "adv begin");
 }
 
-// 离同步页：停止广播并断开当前连接，之后蓝牙不可见。
+// 同步成功后立刻断链：完成提示停留期间链路已无用，立即释放，不等离页。
+void ble_sync_release_link(void)
+{
+    if (!s_adv && !s_conn) return;
+    stop_link();
+    ESP_LOGI(TAG, "link released");
+}
+
+// 离同步页：停广播并断开连接，之后蓝牙不可见。
 void ble_sync_adv_end(void)
 {
-    if (!s_adv) return;
-    s_adv = false;
-    ble_gap_adv_stop();
-    if (s_conn) ble_gap_terminate(BLE_HS_CONN_HANDLE_NONE, BLE_ERR_REM_USER_CONN_TERM);
+    if (!s_adv && !s_conn) return;
+    stop_link();
     ESP_LOGI(TAG, "adv end");
 }
 
@@ -279,7 +311,15 @@ static void on_sync(void)
     else ESP_LOGE(TAG, "addr rc=%d", rc);
 }
 
-static void on_reset(int reason) { ESP_LOGW(TAG, "host reset %d", reason); }
+static void on_reset(int reason)
+{
+    ESP_LOGW(TAG, "host reset %d", reason);
+    // 主机复位会丢掉所有连接且不走 DISCONNECT 回调：必须手动清掉陈旧状态，
+    // 否则 on_sync 重新同步后 advertise() 会因 s_conn 仍为真而提前返回，永远不再广播。
+    s_host_ready = false;
+    s_conn = false;
+    s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+}
 
 static void host_task(void *arg)
 {

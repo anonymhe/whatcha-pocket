@@ -6,6 +6,10 @@
 
 ## Unreleased
 
+- Hardened the Bluetooth sync handler. A profile packet too large for the receive buffer (or shorter than one byte) now replies with the packet-error result instead of silently dropping the transfer, so the client fails fast rather than timing out. Profile writes to flash are now all-or-nothing: the "synced" flag is cleared before the fields are written and only set again if every write succeeds, so a write that fails partway leaves the device as "not synced" instead of mixing old and new profile data, and a storage failure reports a distinct result code. Noted in code that the profile characteristic is intentionally unauthenticated for mini-program compatibility — while the sync screen is open, any device in range can overwrite the profile.
+
+- Released the Bluetooth link the instant a sync succeeds instead of keeping the phone connected through the two-second "done" prompt. The sync screen now calls a dedicated release that stops advertising and drops the active connection as soon as the profile arrives; the NimBLE host stays resident as before, and leaving the page still tears the link down as a fallback. The disconnect now targets the saved connection handle instead of a sentinel NimBLE treated as "not found" (so the link is actually dropped), and advertising recovers after a host reset instead of wedging the sync screen until reboot.
+
 ## v0.1.4 - 2026-11-02
 
 - Fixed the standby battery readout freezing at its pre-sleep value. A light-sleep wake whose screen-restore step failed reported that failure instead of a plain success, so the power layer misread a perfectly good timer wake as a refused sleep and skipped the scheduled repaint, sometimes for hours. The board layer now answers one question only (did the device sleep and wake), logs restore failures separately, and the periodic wake repaint is visible in the default log level. A button wake also repaints the battery immediately instead of waiting for the next 30 s tick.
