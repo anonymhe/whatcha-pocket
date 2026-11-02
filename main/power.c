@@ -306,7 +306,12 @@ void power_service(bool ready)
 
     // 看到主机就记一笔：退避从「最后一次见到」起算，所以插线两分钟就拔掉，
     // 拔线后也仍然有完整的 10 分钟缓冲，而不是立刻睡过去。
-    if (usb_attached) note_usb_host_present();
+    if (usb_attached) {
+        note_usb_host_present();
+        // 判据把阶梯封顶在 DIM，下面那个 STANDBY 分支根本走不到，所以「为什么
+        // 不睡」只能在这里记：到了本该入睡的时刻却插着线，就是被这根线拦下的。
+        if (idle_us >= s_policy.standby_after_us) report_usb_block();
+    }
 
     const sleep_input_t in = {
         .idle_us          = idle_us,
