@@ -115,5 +115,25 @@ int main(void)
     const sleep_policy_t no_deep_sleep = policy(1000, 5000, INT64_MAX);
     assert(stage(&no_deep_sleep, input(INT64_MAX - 1, true, false, false)) == SLEEP_STAGE_STANDBY);
 
+    // USB 退避窗口。grace = 10 分钟。
+    const int64_t grace = 600000000;
+    // 没见过主机（0）或时钟异常：不算退避，别拿「永远不睡」当默认。
+    assert(!sleep_policy_usb_defer_active(0, 1000, grace));
+    assert(!sleep_policy_usb_defer_active(-5, 1000, grace));
+    // 窗口内（含刚看到的那一刻）都还在退避；一到边界就放行。
+    assert(sleep_policy_usb_defer_active(1000, 1000, grace));
+    assert(sleep_policy_usb_defer_active(1000, 1001, grace));
+    assert(sleep_policy_usb_defer_active(1000, 1000 + grace - 1, grace));
+    assert(!sleep_policy_usb_defer_active(1000, 1000 + grace, grace));
+    // 插两分钟就拔线：因为窗口从「最后一次看到」起算，拔线后仍有完整缓冲。
+    const int64_t plug_in = 5000000;              // 插线时刻
+    const int64_t unplug = plug_in + 120000000;   // 两分钟后拔线
+    assert(sleep_policy_usb_defer_active(unplug, unplug, grace));
+    assert(sleep_policy_usb_defer_active(unplug, unplug + grace - 1, grace));
+    assert(!sleep_policy_usb_defer_active(unplug, unplug + grace, grace));
+    // grace 非正数时不退避，避免配置错误造成永不入睡。
+    assert(!sleep_policy_usb_defer_active(1000, 1000, 0));
+    assert(!sleep_policy_usb_defer_active(1000, 1000, -1));
+
     return 0;
 }

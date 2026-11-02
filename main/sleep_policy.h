@@ -41,7 +41,7 @@ typedef struct {
     bool    caffeine;     // 页面要求常亮且及时刷新（番茄钟、计时类）
     bool    radio_busy;   // 蓝牙广播或连接中
     bool    usb_attached; // 有一个真实的 USB 主机在通信（插着充电头不算）
-    bool    standby_deferred; // 上一次因 USB 在场被拒绝入睡，退避期还没到
+    bool    standby_deferred; // 看到主机之后的退避期还没走完（拔线后仍要等满）
 } sleep_input_t;
 
 // 阈值非法（负数、或后一段早于前一段）时按前一段的值修正，
@@ -56,3 +56,8 @@ void sleep_policy_init(sleep_policy_t *policy, int64_t dim_after_us,
 //   usb_attached    → 最多 DIM（USB 主机在场时睡下去会断开枚举与串口）
 //   standby_deferred→ 最多 DIM（退避期内不重复尝试入睡）
 sleep_stage_t sleep_policy_stage(const sleep_policy_t *policy, const sleep_input_t *in);
+
+// USB 主机退避窗口：从最后一次看到主机起算，grace_us 之内都算「还没到」。
+// seen_us == 0 表示没见过主机（或被按键清零），此时退避已结束。
+// 单独成函数是为了能在 host test 里把「插两分钟就拔线」这种边界钉死。
+bool sleep_policy_usb_defer_active(int64_t seen_us, int64_t now_us, int64_t grace_us);
