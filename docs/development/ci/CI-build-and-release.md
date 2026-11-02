@@ -6,13 +6,26 @@
 
 `.github/workflows/build-firmware.yml` builds and publishes firmware for tags and supports manual dispatch. Ordinary branch pushes do not trigger it. Keep this page synchronized with the workflow.
 
-The build job restores ccache, runs `./tools/validate.sh --firmware` with ESP-IDF 5.5.3 for ESP32-C3, verifies the bootloader at `0x0`, partition table at `0x8000`, application at `0x10000`, 8 MB Flash arguments, and the complete mini-program BLE compatibility contract, then uploads `FoloToy-AI-Passport-full.bin`. A separate least-privilege release job publishes that artifact only for a tag.
+The build job restores ccache, runs `./tools/validate.sh --firmware` with ESP-IDF 5.5.3 for ESP32-C3, verifies the bootloader at `0x0`, partition table at `0x8000`, application at `0x10000`, 8 MB Flash arguments, and the complete mini-program BLE compatibility contract, then uploads the merged image together with the three component images. A separate least-privilege release job publishes those artifacts only for a tag.
 
 All Actions are pinned to full commit SHAs. The build job has `contents: read`; only the tag release job receives `contents: write`.
 
+## Which image to flash
+
+The release carries four images because first install and upgrade are different operations:
+
+| Image | Offset | Use it when |
+| --- | --- | --- |
+| `FoloToy-AI-Passport-full.bin` | `0x0` | Clean install or first use: blank, never-flashed, or bricked device. Writes bootloader, partition table, and application in one pass. |
+| `FoloToy-AI-Passport.bin` | `0x10000` | Upgrade from an older WATCHA firmware. Replaces the application only and leaves the existing bootloader, partition table, cardid (`0x356000`), and recovery (`0x700000`) regions intact. |
+| `bootloader.bin` | `0x0` | Piecewise flashing only, when bootloader and application must be written separately. |
+| `partition-table.bin` | `0x8000` | Piecewise flashing only, when the partition layout must be rewritten. |
+
+Say which file suits which user in every release note; a merged image on an upgrade path is unnecessary wear, and an application image on a blank device cannot boot.
+
 ## Browser flashing
 
-Open `https://ai-passport.folotoy.cn/tools/web-flasher/`, connect the USB JTAG/serial device, select the release's merged `FoloToy-AI-Passport-full.bin`, choose a baud rate such as 460800, and write it from `0x0`. The browser performs local writing and verification; it does not upload the firmware file.
+Open `https://ai-passport.folotoy.cn/tools/web-flasher/`, connect the USB JTAG/serial device, select `FoloToy-AI-Passport-full.bin` from the release for a clean install (or `FoloToy-AI-Passport.bin` with offset `0x10000` for an upgrade), choose a baud rate such as 460800, and write it. The browser performs local writing and verification; it does not upload the firmware file.
 
 For board and flashing details, see [the hardware development guide](../../hardware-design/AI_HARDWARE_DEVELOPMENT_GUIDE.md).
 
@@ -48,9 +61,10 @@ things:
 
 - **What's new**: the features, behaviors, or fixes this release adds or
   changes compared with the previous one. Keep it user-facing, not a commit log.
-- **How to build**: how to produce and verify the merged firmware
+- **How to build**: how to produce and verify the firmware
   (`./tools/validate.sh --firmware` or `idf.py build`), and the artifact file to
-  flash (`FoloToy-AI-Passport-full.bin` flashed from `0x0`).
+  flash: `FoloToy-AI-Passport-full.bin` from `0x0` for a clean install, or
+  `FoloToy-AI-Passport.bin` from `0x10000` when upgrading an existing device.
 - **How to use**: how to flash the build (the browser flasher above) and the key
   interactions or hardware requirements of the release.
 
