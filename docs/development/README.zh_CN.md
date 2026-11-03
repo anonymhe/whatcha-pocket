@@ -26,6 +26,7 @@
 - [ble-recovery-compatibility.zh_CN.md](engineering/ble-recovery-compatibility.zh_CN.md)：小程序 BLE 安装所需的产物、分区与 bootloader 强制契约。
 - [coding-conventions.zh_CN.md](engineering/coding-conventions.zh_CN.md)：代码约定（语言风格、复用、注释、测试同步、资源约束等）。
 - [lvgl-chinese-fonts.zh_CN.md](engineering/lvgl-chinese-fonts.zh_CN.md)：内置的中文字体、如何停留在覆盖范围内，以及中文显示排查。
+- [image-assets.zh_CN.md](engineering/image-assets.zh_CN.md)：图片为什么以 LVGL I8 索引色发布、小图标的收支平衡点、数据布局的坑，以及两个会悄悄毁掉转换的量化缺陷。
 - [power-and-sleep.zh_CN.md](engineering/power-and-sleep.zh_CN.md)：空闲降级阶梯（active / dim / standby / sleep / off）、判据层与执行层的分工，以及 light sleep 的唤醒路径。
 
 ## CI（ci）

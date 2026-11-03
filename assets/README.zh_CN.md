@@ -27,6 +27,7 @@
 - 优先采用适合 240 × 320 RGB565 显示的格式，并纳入 Flash 与内部 RAM 考量。
 - 许可允许时保留可编辑源文件，并记录来源与许可。
 - 图片中不得包含设备二维码秘密、凭证或个人数据。
+- 新图用 `tools/gen_images.py` 转换（LVGL I8 索引色，见[图片素材](../docs/development/engineering/image-assets.zh_CN.md)）；每边小于 24 px 的精灵不值得索引化。
 
 ## 电池 profile（battery）
 
