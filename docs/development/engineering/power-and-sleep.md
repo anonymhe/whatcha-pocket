@@ -43,7 +43,7 @@ stepped by the manual path, which is why every idle decision uses
 
 | Layer | File | Responsibility |
 | --- | --- | --- |
-| Policy | `main/sleep_policy.c` | pure function of (idle time, ready, caffeine, radio) to a stage; no IDF, no LVGL, covered by a host test |
+| Policy | `main/sleep_policy.c` | pure function of (idle time, ready, caffeine, radio, USB host, USB back-off) to a stage; no IDF, no LVGL, covered by a host test |
 | Application | `main/power.c` | owns the timers, applies backlight and codec changes, drives the battery readout cadence, calls light/deep sleep |
 | Board | `components/bsp/bsp_power.c` | arms and disarms wake sources, sleeps, powers peripherals down |
 
@@ -88,6 +88,50 @@ Two traps worth knowing:
   `sdkconfig.defaults`. The board already has an external pull-up, and stacking
   the internal one on top shifts the whole divider ladder, so the three key
   windows drift.
+
+## A connected USB host blocks the sleep
+
+Light sleep powers the USB-Serial-JTAG pad and clock down (`SOC_USB_SERIAL_JTAG_SUPPORT_LIGHT_SLEEP`
+is not defined for the ESP32-C3), so the endpoint disappears from the bus and the
+serial port drops. That is acceptable for a badge left on a desk, but not while
+someone is debugging it over the same port. The firmware therefore refuses to
+sleep while a real USB host is on the bus, and keeps a ten minute grace period
+after the host is gone.
+
+Detection is not a pin: the board exposes no VBUS sense GPIO, and every usable
+pin is already allocated. Instead the firmware asks the chip, via
+`bsp_power_usb_host_attached()` → `usb_serial_jtag_is_connected()`, whether it is
+receiving SOF packets. A host sends one every millisecond; a charger or power
+bank sends none. So the predicate matches "a real host is talking to us", not
+"something is feeding 5 V".
+
+Three properties are worth remembering:
+
+- The IDF connection monitor is already linked in through
+  `CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG_ENABLED`, so its tick hook costs nothing
+  extra here. IDF's own `CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION` would have solved a
+  related problem, but it `depends on PM_ENABLE`, which this firmware deliberately
+  leaves off.
+- The monitor assumes "connected" until three consecutive ticks see no SOF, so
+  the very first milliseconds after reset can report a false positive. That is a
+  millisecond-scale artifact measured against a minute-scale decision.
+- A USB device attached *while* the device is asleep cannot wake it: on the C3
+  the USB-Serial-JTAG is not a light sleep wake source. The port reappears on the
+  next periodic wake, 30–60 s later.
+
+`sleep_input_t` carries two related bits. `usb_attached` is the live reading.
+`standby_deferred` covers the ten minutes after the host was last seen, so
+unplugging the cable does not send the device to sleep the instant the host
+vanishes. The clock starts at the last sighting rather than at the first refusal,
+because plugging in for two minutes and pulling the cable before the idle ladder
+reaches standby never produces a refusal at all, and starting the back-off only
+at that point would let the device sleep the moment the cable came out.
+Both cap the ladder at `DIM`, exactly like `POWER_RADIO_ACTIVE`; `power.c` also
+re-checks before `esp_light_sleep_start()` and before deep sleep, because up to
+500 ms pass between the decision and the action, which is long enough for an
+enumeration to start. A refusal leaves the backlight dimmed rather than restoring
+`ACTIVE`, since a screen that brightens whenever the cable moves is worse than
+one that stays dim.
 
 ## Periodic wake while in STANDBY and the battery readout
 
@@ -192,17 +236,26 @@ Device tests: PASS / FAIL     the steps below
 
 On-device checks that no host test can cover:
 
-1. Leave the device idle for 5 minutes. The screen dims to the `DIM` level and
-   stops updating, and the USB-Serial console drops: light sleep powers the
-   wireless peripherals and the USB PHY down, so a closed port is expected, not a
-   crash. The frame left on screen stays visible, because the backlight keeps
-   running and the panel refreshes its own GRAM.
-2. Press any key. The device wakes in place, the same screen returns, and the
+1. Leave the device idle for 5 minutes with the USB cable unplugged. The screen
+   dims to the `DIM` level and stops updating, and the USB-Serial console drops:
+   light sleep powers the wireless peripherals and the USB PHY down, so a closed
+   port is expected, not a crash. The frame left on screen stays visible, because
+   the backlight keeps running and the panel refreshes its own GRAM.
+2. Plug the cable into a computer, leave the device idle for 5 minutes, and
+   confirm it does **not** sleep: the backlight drops to the `DIM` level, the
+   console stays alive, and one log line reports the refusal. Repeat with a
+   charger only: no host, no SOF, so the device sleeps as usual.
+3. Unplug the cable and wait. The device must not sleep for ten minutes after the
+   last moment a host was seen, then must resume the normal ladder. Plugging in
+   for only a minute or two and pulling the cable again must still leave the full
+   ten minutes of back-off. Pressing any key cancels the remaining back-off
+   immediately.
+4. Press any key. The device wakes in place, the same screen returns, and the
    key that woke it does not also activate the focused item.
-3. Press keys after waking and confirm all three still work. If only one responds,
+5. Press keys after waking and confirm all three still work. If only one responds,
    `bsp_button_restore_adc()` did not run or the channel config failed.
-4. Open the sync screen, wait 10 minutes, and confirm the device does **not**
+6. Open the sync screen, wait 10 minutes, and confirm the device does **not**
    sleep: `POWER_RADIO_ACTIVE` must hold it in `DIM`.
-5. Start the Pomodoro timer and confirm the screen never dims while it runs.
-6. Compare current draw in `ACTIVE`, `DIM` and `STANDBY` with a meter. The
+7. Start the Pomodoro timer and confirm the screen never dims while it runs.
+8. Compare current draw in `ACTIVE`, `DIM` and `STANDBY` with a meter. The
    magnitudes in this document are relative, not measured on this board.

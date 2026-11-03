@@ -30,7 +30,7 @@ ST7789 面板在 3.3 V 轨带电时自己按帧刷新 GRAM，所以 light sleep 
 
 | 层 | 文件 | 职责 |
 | --- | --- | --- |
-| 策略 | `main/sleep_policy.c` | 纯函数：（空闲时长、是否就绪、caffeine、蓝牙占用）→ 状态；不碰 IDF、不碰 LVGL，有 host test 覆盖 |
+| 策略 | `main/sleep_policy.c` | 纯函数：（空闲时长、是否就绪、caffeine、蓝牙占用、USB 主机、USB 退避）→ 状态；不碰 IDF、不碰 LVGL，有 host test 覆盖 |
 | 应用 | `main/power.c` | 掌管计时器，执行背光与 codec 变更，驱动电量读数的刷新节奏，调用 light/deep sleep |
 | 板级 | `components/bsp/bsp_power.c` | 装/卸唤醒源、入睡、逐个下电外设 |
 
@@ -51,6 +51,20 @@ ST7789 面板在 3.3 V 轨带电时自己按帧刷新 GRAM，所以 light sleep 
 
 - `esp_deep_sleep_enable_gpio_wakeup()` 的第一个参数是**引脚位掩码**，不是引脚号。正确的是 `1ULL << 0`；传 `0` 会被判非法，若又忽略返回值，就得到一次没有任何唤醒源的睡眠。
 - `sdkconfig.defaults` 里 `CONFIG_ESP_SLEEP_GPIO_ENABLE_INTERNAL_RESISTORS` 设为 `n`。板上已有外部上拉，再叠内部上拉会把整条分压阶梯抬高，三个按键的电压窗口随之漂移。
+
+## USB 主机在场时不许入睡
+
+light sleep 会关掉 USB-Serial-JTAG 的 pad 和时钟（ESP32-C3 上 `SOC_USB_SERIAL_JTAG_SUPPORT_LIGHT_SLEEP` 未定义），于是设备从总线上消失、串口断开。放在桌上当工牌时这没问题，但有人正通过同一个口调试时就不能这么干。所以固件在真正的主机挂着总线时拒绝入睡，并且在主机消失后仍留十分钟缓冲。
+
+判据不是某个引脚：板上没有 VBUS 检测脚，能用的引脚也早已分完。固件改为问芯片自己 —— `bsp_power_usb_host_attached()` → `usb_serial_jtag_is_connected()`，即「有没有在收 SOF 包」。主机每毫秒发一个 SOF，充电头和充电宝一个都不发，所以这个判据对应的是「有真主机在跟我们通信」，而不是「有人在给我们供 5 V」。
+
+三件值得记住的事：
+
+- IDF 的连接监控已经因为 `CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG_ENABLED` 被链接进来，它的 tick hook 在这里不额外增加开销。IDF 自带的 `CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION` 能解决相近的问题，但它 `depends on PM_ENABLE`，而本固件是故意关掉 `PM_ENABLE` 的。
+- 监控在开机时先假定「已连接」，连续三个 tick 收不到 SOF 才翻成未连接，所以复位后的最初几毫秒可能误报在场。毫秒级偏差对分钟级的判据没有影响。
+- 设备睡着之后再插 USB 叫不醒它：C3 上 USB-Serial-JTAG 不是 light sleep 唤醒源。端口会在下一次定期唤醒时重新出现，也就是 30–60 秒之后。
+
+`sleep_input_t` 里对应两个位：`usb_attached` 是实时读数，`standby_deferred` 覆盖「最后一次看到主机」之后的十分钟，免得拔线瞬间就睡过去。计时从最后一次看到主机起算，而不是从第一次被拒睡起算：只插两分钟就拔掉时，空闲时长根本还没到入睡时刻，也就不会有拒睡，等到那时才开始计时就等于拔线立刻睡。两者都像 `POWER_RADIO_ACTIVE` 一样把阶梯封顶在 `DIM`；`power.c` 在 `esp_light_sleep_start()` 之前和 deep sleep 之前还会各复查一次，因为判据与动作之间最长有 500 ms，足够一次枚举开始。拒睡时保持 `DIM` 而不拉回 `ACTIVE`：插拔线时屏幕突然变亮，比一直暗着更难看。
 
 ## STANDBY 期间的定期唤醒与电量读数
 
@@ -97,9 +111,11 @@ Device tests: PASS / FAIL     下面的步骤
 
 host test 覆盖不到、必须上机确认的项：
 
-1. 静置 5 分钟。屏幕压到 `DIM` 那一档亮度并停止刷新，USB-Serial 控制台断开：light sleep 会关掉无线外设和 USB PHY，端口掉线是预期行为，不是崩溃。屏上那一帧仍然看得见，因为背光还在输出，面板也仍在自己刷 GRAM。
-2. 按任意键。设备原地唤醒，同一屏画面回来，而且用来唤醒的这一下不会顺带触发当前选中项。
-3. 唤醒后逐个按键，确认三个都还有效。只有一个响应，说明 `bsp_button_restore_adc()` 没跑到或通道配置失败。
-4. 打开同步页等 10 分钟，确认设备**没有**入睡：`POWER_RADIO_ACTIVE` 必须把它挡在 `DIM`。
-5. 启动番茄计时，确认计时期间屏幕不调暗。
-6. 用万用表对比 `ACTIVE`、`DIM`、`STANDBY` 的电流。本文里的量级都是相对大小，未在本板实测。
+1. 拔掉 USB 线静置 5 分钟。屏幕压到 `DIM` 那一档亮度并停止刷新，USB-Serial 控制台断开：light sleep 会关掉无线外设和 USB PHY，端口掉线是预期行为，不是崩溃。屏上那一帧仍然看得见，因为背光还在输出，面板也仍在自己刷 GRAM。
+2. 把线插到电脑上，静置 5 分钟，确认设备**没有**入睡：背光降到 `DIM` 档、串口全程在线，日志里出现一行拒绝入睡的记录。再换只插充电头试一次：没有主机就没有 SOF，设备照常入睡。
+3. 拔线后继续等：从最后一次看到主机算起十分钟内不许入睡，之后恢复正常的阶梯。只插一两分钟就拔掉，同样要留满这十分钟。中途按任意键会立刻取消剩余的退避。
+4. 按任意键。设备原地唤醒，同一屏画面回来，而且用来唤醒的这一下不会顺带触发当前选中项。
+5. 唤醒后逐个按键，确认三个都还有效。只有一个响应，说明 `bsp_button_restore_adc()` 没跑到或通道配置失败。
+6. 打开同步页等 10 分钟，确认设备**没有**入睡：`POWER_RADIO_ACTIVE` 必须把它挡在 `DIM`。
+7. 启动番茄计时，确认计时期间屏幕不调暗。
+8. 用万用表对比 `ACTIVE`、`DIM`、`STANDBY` 的电流。本文里的量级都是相对大小，未在本板实测。

@@ -29,8 +29,11 @@ sleep_stage_t sleep_policy_stage(const sleep_policy_t *policy, const sleep_input
     // 时钟回绕或首帧（idle 为负）按刚操作过处理，先亮着。
     if (in->idle_us < 0) return SLEEP_STAGE_ACTIVE;
 
-    if (in->radio_busy) {
-        // 蓝牙不跨 sleep：链路要活着，最多只能压暗。
+    if (in->radio_busy || in->usb_attached || in->standby_deferred) {
+        // 三者效果相同，都封顶在 DIM：
+        //   radio_busy   —— 蓝牙链路不跨 sleep，链路要活着；
+        //   usb_attached —— 有个真实 USB 主机在通信，睡下去就断枚举、断串口；
+        //   standby_deferred —— 刚因 USB 被拒睡，退避期内不再重复尝试。
         return in->idle_us >= policy->dim_after_us ? SLEEP_STAGE_DIM : SLEEP_STAGE_ACTIVE;
     }
 
@@ -38,4 +41,15 @@ sleep_stage_t sleep_policy_stage(const sleep_policy_t *policy, const sleep_input
     if (in->idle_us >= policy->standby_after_us) return SLEEP_STAGE_STANDBY;
     if (in->idle_us >= policy->dim_after_us) return SLEEP_STAGE_DIM;
     return SLEEP_STAGE_ACTIVE;
+}
+
+bool sleep_policy_usb_defer_active(int64_t seen_us, int64_t now_us, int64_t grace_us)
+{
+    // 没见过主机：没有退避可言。负数被视为时钟回绕，同样按「没见过」处理，
+    // 否则 now - seen 会算出巨大的正数，设备再也不会被拦住。
+    if (seen_us <= 0) return false;
+    if (grace_us <= 0) return false;
+    const int64_t elapsed = now_us - seen_us;
+    if (elapsed < 0) return false;
+    return elapsed < grace_us;
 }

@@ -12,6 +12,11 @@
 #include "esp_log.h"
 #include "esp_sleep.h"
 #include "esp_timer.h"
+#include "sdkconfig.h"
+
+#if CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED
+#include "driver/usb_serial_jtag.h"
+#endif
 
 static const char *TAG = "bsp_power";
 
@@ -52,6 +57,15 @@ bsp_wake_cause_t bsp_power_boot_cause(void)
     s_boot_cause_known = true;
     s_boot_cause = map_wakeup_cause(esp_sleep_get_wakeup_cause());
     return s_boot_cause;
+}
+
+bool bsp_power_usb_host_attached(void)
+{
+#if CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED
+    return usb_serial_jtag_is_connected();
+#else
+    return false;
+#endif
 }
 
 esp_err_t bsp_power_wake_source_check(const bsp_wake_source_t *source)
