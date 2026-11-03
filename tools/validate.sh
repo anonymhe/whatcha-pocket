@@ -32,6 +32,7 @@ run_static_checks() {
         tests/test_sleep_policy.c main/sleep_policy.c \
         -o "${test_dir}/test_sleep_policy"
     "${test_dir}/test_sleep_policy"
+    PYTHONDONTWRITEBYTECODE=1 python3 tests/test_battery_profile.py
     python3 tests/test_verify_firmware.py
     rm -rf "${test_dir}"
     echo "Host tests: PASS"

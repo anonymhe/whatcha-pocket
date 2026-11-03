@@ -67,3 +67,13 @@ CONFIG_ESP_TIMER_TASK_STACK_SIZE=8192
 # 按键 ADC 节点(GPIO0)已有外部 10k 上拉。深睡时会按唤醒电平自动叠加内部上拉/下拉，
 # 叠上去会把三键分压整体抬高，必须关闭。
 CONFIG_ESP_SLEEP_GPIO_ENABLE_INTERNAL_RESISTORS=n
+
+# --- CW2017 电池 profile 选择 ---
+# 这台机器实际装配的电芯决定该用哪一份 80 字节 profile。两处历史冲突：
+#   * WatchaAI/WATCHA-POCKET 开源固件（含 v0.1.3）一直用优特利 520mAh 那一份，
+#     该机在该版本下能正常报到 100%；
+#   * 本 fork 从上游 ai-passport 移植了万锂 500mAh profile2（2026-10-20），
+#     刷入后同一台机器只报到 98%。
+# 现在默认 0（保持原有 520mAh 行为）；置 1 换成万锂 500mAh。改这里只影响
+# 写入电量计的 80 字节，不改变充电电路、电流、电压上限、引脚或分区布局。
+CONFIG_WATCHA_BATTERY_PROFILE_WANLI_500MAH=n

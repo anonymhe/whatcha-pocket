@@ -4,6 +4,7 @@
 
 #include "bsp_display.h"
 #include "bsp_power.h"
+#include "bsp_battery.h"
 #include "app_ui.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -22,6 +23,11 @@ static const char *TAG = "power";
 // 进入 SLEEP（deep sleep）默认关闭：唤醒即冷启动，界面状态全部丢失，不适合作为
 // 空闲超时的默认归宿。需要「长时间关机」的应用把它改成 1 即可。
 #define POWER_ENABLE_DEEP_SLEEP 0
+
+// 台架观测开关：临时置 1 会让设备永不降级（等价于一直按住 POWER_CAFFEINE），
+// 用于接 USB 长时间记录充电曲线 —— light sleep 会关掉 USB PHY，串口随之消失，
+// 待机期间的日志根本收不到。**发货前必须改回 0**。
+#define POWER_BENCH_NO_SLEEP 0
 
 #define BACKLIGHT_ACTIVE   100
 // DIM 与 STANDBY 用同一个亮度：都是「屏幕还看得见，但明显暗下去」。
@@ -224,6 +230,30 @@ static void refresh_battery_now(void)
     s_last_soc = ui_battery_refresh_all();
 }
 
+// 电量计诊断轨迹：只在读数发生变化时打一行，避免 30 秒一条把日志刷满。
+// 放在这里而不是只放在 STANDBY 的定时唤醒里，是因为 light sleep 会把 USB PHY
+// 一起关掉（见 docs/development/engineering/power-and-sleep.md），串口在待机
+// 期间根本读不到日志 —— 而接线做充放电观测恰恰必须能读到。
+// 电压打原始 14 bit：满充附近端电压十几分钟才变化几个 LSB，整数 mV 看不出来。
+static void log_battery_trace(void)
+{
+    static int last_soc_raw = -1;
+    static int last_mv_raw = -1;
+
+    const int soc_raw = bsp_battery_soc_raw();
+    const int mv_raw = bsp_battery_mv_raw();
+    if (soc_raw < 0 || mv_raw < 0) return;
+    if (soc_raw == last_soc_raw && mv_raw == last_mv_raw) return;
+    last_soc_raw = soc_raw;
+    last_mv_raw = mv_raw;
+
+    const int t10 = bsp_battery_temp_tenths();
+    const int t_abs = t10 < 0 ? -t10 : t10;
+    ESP_LOGI(TAG, "电量轨迹 SOC=%d.%d/256 VCELL=0x%04X(%d mV) TEMP=%s%d.%d C",
+             soc_raw / 256, soc_raw % 256, (unsigned)mv_raw, bsp_battery_mv(),
+             t10 < 0 ? "-" : "", t_abs / 10, t_abs % 10);
+}
+
 // 醒着时的节流：距上次重绘超过当前间隔才重绘一次屏上所有电量视图。
 // 定时唤醒那条路径不走这里——它本就是为刷新而来，见 enter_standby()。
 static void maybe_refresh_battery(void)
@@ -231,7 +261,9 @@ static void maybe_refresh_battery(void)
     const int64_t now = esp_timer_get_time();
     if (now - s_last_battery_refresh_us < (int64_t)battery_refresh_period_us()) return;
     refresh_battery_now();
+    log_battery_trace();
 }
+
 
 static bsp_wake_source_t standby_wake_source(void)
 {
@@ -284,8 +316,22 @@ static void enter_standby(void)
         refresh_battery_now();
         // INFO 级别：这是判断「待机电量为什么不更新」的唯一观测点，降到 DEBUG 会被
         // 默认日志级别整个编掉，长时间待机测试里刷新回路是否活着无从得知。
-        ESP_LOGI(TAG, "定期唤醒重绘：睡了 %lld ms，屏上电量=%d%%",
-                 slept_us / 1000, s_last_soc);
+        // 电压同时给出原始 14bit 值和 mV：满充附近端电压十几分钟才变化几个 LSB，
+        // 只看整数 mV 会把充电曲线看成一个常数，误判成「已经停止充电」。
+        {
+            const int raw = bsp_battery_mv_raw();
+            const int soc_raw = bsp_battery_soc_raw();
+            const int t10 = bsp_battery_temp_tenths();
+            // 摄氏度可为负（量程 -40–87.5），整数除法会朝零取整，这里显式取绝对值
+            // 再拼小数位，否则 -5 会打成 "-1.-5"。
+            const int t_abs = t10 < 0 ? -t10 : t10;
+            ESP_LOGI(TAG, "定期唤醒重绘：睡了 %lld ms，屏上电量=%d%%，"
+                          "SOCraw=%d(%d.%d/256)，VCELL=0x%04X(%d mV)，TEMP=%s%d.%d C",
+                     slept_us / 1000, s_last_soc,
+                     soc_raw, soc_raw / 256, soc_raw % 256,
+                     raw < 0 ? 0u : (unsigned)raw, bsp_battery_mv(),
+                     t10 < 0 ? "-" : "", t_abs / 10, t_abs % 10);
+        }
         return;
     }
 
@@ -314,12 +360,19 @@ void power_service(bool ready)
     }
 
     const sleep_input_t in = {
+<<<<<<< HEAD
         .idle_us          = idle_us,
         .ready            = ready,
         .caffeine         = holds_any(POWER_CAFFEINE),
         .radio_busy       = holds_any(POWER_RADIO_ACTIVE),
         .usb_attached     = usb_attached,
         .standby_deferred = usb_defer_active(),
+=======
+        .idle_us    = esp_timer_get_time() - last_activity_us(),
+        .ready      = ready,
+        .caffeine   = POWER_BENCH_NO_SLEEP || holds_any(POWER_CAFFEINE),
+        .radio_busy = holds_any(POWER_RADIO_ACTIVE),
+>>>>>>> fix/battery-capped-98pct
     };
     const sleep_stage_t next = sleep_policy_stage(&s_policy, &in);
 

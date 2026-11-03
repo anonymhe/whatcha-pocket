@@ -15,6 +15,21 @@ int bsp_battery_soc(void);
 // 电池电压 mV;读失败返回 -1。
 int bsp_battery_mv(void);
 
+// 电压的 14 bit 原始值(每 LSB = 312.5 µV);读失败返回 -1。
+// 用途只有一个:诊断充电末端。1 mV 已经等于 3.2 个 LSB,而满充附近端电压
+// 十几分钟才变化几个 LSB —— 用 mV 观察会把整条曲线抹平成一个常数。
+int bsp_battery_mv_raw(void);
+
+// 剩余电量以 1/256% 为单位的原始 16 bit 值;读失败返回 -1。
+// 高字节即 bsp_battery_soc(),低字节是小数部分,用来分辨「芯片算到顶了」
+// 和「小数点后还在慢慢涨」。
+int bsp_battery_soc_raw(void);
+
+// 电芯温度,0.1 °C 为单位;读失败返回 -1。
+// CW2017 的 TEMP(0x06) 是无符号 8 bit、LSB=0.5 °C、量程 -40..87.5 °C,
+// 手册换算为 TEMP(°C) = -40 + Value/2。
+int bsp_battery_temp_tenths(void);
+
 // 省电:令 CW2017 进入休眠(写 CONFIG=SLEEP 并回读校验,失败重试一次)。
 // 适合长时间低功耗期间停掉电量计;未初始化时为空操作返回 ESP_OK。
 // 唤醒需重新 bsp_battery_init()(其内部会按匹配结果切回 ACTIVE)。

@@ -156,14 +156,103 @@ The sfx task's streaming buffers are the main transient audio heap users. Prefer
 
 ## 9. CW2017 fuel gauge
 
-Initialization reads VERSION and checks the profile update flag plus all 80 profile bytes. When needed, it puts the gauge to sleep, writes and verifies the supplied profile for the specified 520 mAh cell, sets the update flag, restarts the gauge with the required `0x30` to `0x00` sequence, and waits up to five seconds for a valid SOC. Replacing the cell requires a matching vendor-generated profile and renewed charge/discharge validation.
+Two vendor profiles are archived under `assets/battery/` and exactly one is compiled in,
+selected by `CONFIG_WATCHA_BATTERY_PROFILE_WANLI_500MAH` in `components/bsp/Kconfig`:
+
+| Option | Profile | Cell |
+| --- | --- | --- |
+| `n` (default) | [`utl-520mah-upstream-42f16ab9.txt`](../../assets/battery/utl-520mah-upstream-42f16ab9.txt) | UTL 520 mAh, the profile the public `WatchaAI/WATCHA-POCKET` firmware carries and this fork shipped up to v0.1.3 |
+| `y` | [`wanli-500mah-profile2-xil40x-20261020.txt`](../../assets/battery/wanli-500mah-profile2-xil40x-20261020.txt) | Wanli New Energy 500 mAh, profile2 / XIL40X |
+
+The two are not alternative calibrations of one cell: 51 of the 80 bytes differ, so the SOC
+curve is completely different. Switching them changes only the 80 bytes written to the
+gauge, never the charging circuit, charge current, voltage limits, pin map, or partitions.
+
+Initialization reads VERSION and checks the profile update flag plus all 80 profile bytes.
+When needed, it puts the gauge to sleep, writes and verifies the configured profile, sets
+the update flag, restarts the gauge with the required `0x30` to `0x00` sequence, and waits
+up to five seconds for a valid SOC. A matching profile is reused without rewriting.
+Replacing the cell requires a matching vendor-generated profile and renewed charge/discharge
+validation.
 
 - SOC uses registers `0x04–0x05`; values above 100 are treated as not ready and return `-1`.
 - Voltage uses the 14-bit value at `0x02–0x03`, converted as `raw × 312.5 µV`, and returned in mV.
 - Transactions use a 100 ms timeout at 100 kHz.
 - A missing device returns `ESP_ERR_NOT_FOUND`; the battery page is disabled without stopping the application.
 
-Accurate production SOC requires the cell parameters, CW2017 datasheet/vendor profile, and full charge/discharge validation.
+Accurate production SOC requires the cell parameters, CW2017 datasheet/vendor profile, and
+full charge/discharge validation. A correct profile is necessary but not sufficient: the
+gauge derives SOC from open-circuit voltage against the profile's curve, so a profile for a
+different cell reports a plausible but wrong percentage instead of failing.
+
+### 9.1 Choosing the profile
+
+The A/B below was run on one unit, on the same charger, minutes apart, with the compiled
+profile as the only variable:
+
+| Compiled profile | SOC | VCELL |
+| --- | --- | --- |
+| Wanli 500 mAh | 98.184 % | 4159.7 mV |
+| UTL 520 mAh | **100.0 %** | 4165.3 mV |
+
+The pack was the same in both runs, so the gauge was reading one physical pack through two
+different OCV curves: the 500 mAh curve places about 4.160 V at 98.2 %, the 520 mAh curve
+places about 4.165 V at 100 %. The hardware therefore carries the 520 mAh cell, which is why
+it is the default.
+
+This is also the failure mode to remember: a percentage that stops short of 100 % can mean
+the profile does not describe the cell, but it can equally mean the pack was simply not
+being charged at the time. Confirm which by watching VCELL, not the percentage.
+
+The charging circuit is outside the firmware's control: it sets the current and the
+termination voltage, and no profile byte alters it. A profile for the wrong cell can only
+mis-scale the *reported* percentage; it cannot stop the cell from charging.
+
+
+### 9.2 Diagnosing a reading that will not move
+
+Nothing in the firmware clamps or rescales the percentage: `bsp_battery_soc()` returns the
+chip's high SOC byte untouched. So a value that stops moving is a gauge reading, and the
+boot log is built to say which kind:
+
+```text
+电量计诊断: profile=匹配(0xB9287814) 期望=0xB9287814 SOC=98.74/256 VCELL=0x33F5(4156562 uV) TEMP=0x90(32.0 C) CONFIG=0x00 SOC_ALERT=0x94
+```
+
+- `profile` compares a FNV-1a fingerprint of the 80 bytes actually stored in the gauge with
+  the fingerprint of the compiled profile (520 mAh = `0xEC96A1A5`, 500 mAh = `0xB9287814`).
+  `不匹配` means the gauge still holds another cell's bytes, so the percentage is unrelated
+  to the fitted cell. The profile is only rewritten on the first boot after a change.
+- `SOC=n.m/256` includes the low byte, the fractional percentage. A whole number with a
+  near-zero fraction means the chip's own calculation stopped; a fraction still climbing
+  means charging is in progress.
+- `VCELL` is the raw 14-bit value, LSB = 312.5 µV, printed **because integer mV destroys
+  the signal**: one mV is already 3.2 LSB, and near full charge the terminal voltage moves
+  only a few LSB over many minutes. A log showing the same mV every ten minutes is not
+  evidence that nothing is happening.
+
+The gauge also has no current register (VERSION, VCELL, SOC, TEMP, CONFIG, INT_CONF,
+SOC_ALERT, TEMP_MAX/MIN, VOLT_ID) and the board has no sense resistor or charger status
+pin, so the host cannot report charge current. "Still charging" versus "charge terminated"
+must be inferred from dV/dt and temperature. A percentage that tops out therefore has three
+indistinguishable-on-screen causes: an old profile still in the gauge, a charge that has not
+reached the profile's full-charge point, or a profile that does not describe the cell. The
+diagnostic line separates them; the percentage alone never does.
+
+While awake, the power layer logs the same values whenever they change:
+
+```text
+电量轨迹 SOC=98.184/256 VCELL=0x33FF(4159 mV) TEMP=34.0 C
+```
+
+Resetting the device to sample a charge is a mistake: the CW2017 datasheet states it treats
+the battery as "a free one relaxed more than 0.5 hours" at every power-up and derives the
+first SOC from the 14-bit voltage as an OCV. Each reset discards charge tracking and re-runs
+that lookup, so reboot sampling reports the same value forever and can never observe a
+charge. `POWER_BENCH_NO_SLEEP` in `main/power.c` exists for the opposite reason: light sleep
+powers down the USB PHY, so an unattended capture needs the device held awake. It is 0 in
+the shipping configuration and must stay 0; set it to 1 only for a bench capture.
+
 
 ## 10. Flash, console, and memory
 
