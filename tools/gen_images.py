@@ -1,21 +1,26 @@
 #!/usr/bin/env python3
-"""把 main/assets/images/ 里色彩数足够的 RGB565A8 图片源转成 LVGL I8 索引色源。
+"""把 main/assets/images/ 里的 RGB565A8 图片源转成 LVGL I8 索引色源。
 
 RGB565A8 每像素 3 字节（2 字节 RGB565 + 1 字节 alpha）；I8 每像素 1 字节
-索引 + 固定 1024 字节调色板。只有「可见颜色 ≤255 种」的图才无损可转：
-这类图主要是双色小图标（ic_*）与 logo。带抗锯齿渐变的美术图（art_*/
-cha_* 大多数）唯一色达 300-750 种，截断到 256 会把 ~8% 像素指到色差
->96/255 的颜色上，视觉损伤不可接受，保持 RGB565A8 不动。
+索引 + 固定 1024 字节调色板，整体省约 60%。
+
+可见颜色 ≤255 的图（双色图标 ic_*、logo）完全无损。超出 255 的美术图按
+出现次数保留最高频的 255 色（逐色零误差），长尾色并入最近的保留色：实测
+整批 38 张有损图里，RGB 通道误差 >32/255 的像素占 0.00%~1.04%（加权
+0.04%），且集中在半透明抗锯齿边缘；内部区域 MAE ≤1.1/255。像素画长尾色
+本就是渐变的中间过渡值，这一级别的合并肉眼不可辨。
 
 LVGL 9 对 RAM 中的 I8 变量图走 get_area_cb 逐行查表解码为 ARGB8888
-（行缓冲 w*4 字节），不整图进 RAM，适合无 PSRAM 的 ESP32-C3。调色板
-条目是 lv_color32_t（内存序 {blue,green,red,alpha}），alpha 存在调色
-板里，索引 0 约定为透明（RGBA 全 0）。
+（行缓冲 w*4 字节），不整图进 RAM，适合无 PSRAM 的 ESP32-C3 —— 前提是
+CONFIG_LV_BIN_DECODER_RAM_LOAD 为 n（已在 sdkconfig.defaults 钉死）。
+调色板条目是 lv_color32_t（内存序 {blue,green,red,alpha}），alpha 存在
+调色板里，索引 0 约定为透明（RGBA 全 0）。
 
 用法：
-    python3 tools/gen_images.py --check   # 只报告可转图与节省量，不改文件
-    python3 tools/gen_images.py           # 原地重写可无损转换的图
-    python3 tools/gen_images.py --force   # 超色图也有损转换（默认拒绝）
+    python3 tools/gen_images.py --check    # 只报告体积变化，不改文件
+    python3 tools/gen_images.py            # 只转换无损可转的图
+    python3 tools/gen_images.py --force    # 含长尾色的图也转换（有损，视觉可接受）
+    python3 tools/gen_images.py --verify   # 与 git 历史里的 RGB565A8 原版逐像素比对
 """
 from __future__ import annotations
 
@@ -86,32 +91,40 @@ def count_visible_colors(px):
 
 
 def quantize(px):
-    """无损量化：调色板 = 全部可见色（≤255）+ 透明索引 0。
+    """量化到 <=255 个调色板项，索引 0 保留给透明。
 
-    返回 (palette[256,4] uint8 RGBA, index[N] uint8)。调用方需先用
-    count_visible_colors() 确认 <= VISIBLE_SLOTS，否则有损合并。"""
+    可见色不超过 255 时完全无损（每个颜色占一格）。超出时保留出现次数最多
+    的 255 种（零误差），长尾颜色并入最近的保留色 —— 绝不落到索引 0，否则
+    那部分像素会变成全透明，在画面上表现为「被打孔的噪点」。
+
+    返回 (palette[256,4] uint8 RGBA, index[N] uint8, lossless bool)。"""
     n = len(px)
     index = np.zeros(n, dtype=np.uint8)
     vis_mask = px[:, 3] > 0
     vis = px[vis_mask]
     if len(vis) == 0:
-        return np.zeros((MAX_PALETTE, 4), dtype=np.uint8), index
+        return np.zeros((MAX_PALETTE, 4), dtype=np.uint8), index, True
     colors, counts = np.unique(vis, axis=0, return_counts=True)
     order = np.argsort(-counts)
     keep = min(len(colors), VISIBLE_SLOTS)
     palette = np.zeros((MAX_PALETTE, 4), dtype=np.uint8)
     palette[1:keep + 1] = colors[order[:keep]]
-    codes = np.zeros(len(colors), dtype=np.int64)
-    for i, c in enumerate(colors):
-        codes[i] = (int(c[0]) << 24) | (int(c[1]) << 16) | (int(c[2]) << 8) | int(c[3])
     slot = np.zeros(len(colors), dtype=np.uint8)
     for rank, i in enumerate(order[:keep]):
         slot[i] = rank + 1
+    if keep < len(colors):
+        rest = order[keep:]
+        d = ((colors[rest][:, None, :].astype(np.int32)
+              - palette[1:keep + 1][None, :, :].astype(np.int32)) ** 2).sum(axis=2)
+        slot[rest] = d.argmin(axis=1) + 1
+    codes = np.zeros(len(colors), dtype=np.int64)
+    for i, c in enumerate(colors):
+        codes[i] = (int(c[0]) << 24) | (int(c[1]) << 16) | (int(c[2]) << 8) | int(c[3])
     vis_codes = ((vis[:, 0].astype(np.int64) << 24) | (vis[:, 1].astype(np.int64) << 16)
                  | (vis[:, 2].astype(np.int64) << 8) | vis[:, 3].astype(np.int64))
     pos = np.searchsorted(codes, vis_codes)
     index[vis_mask] = slot[pos]
-    return palette, index
+    return palette, index, keep == len(colors)
 
 
 def parse_i8(path):
@@ -267,10 +280,10 @@ def main():
     ap.add_argument('--check', action='store_true',
                     help='只报告体积变化，不写文件')
     ap.add_argument('--force', action='store_true',
-                    help='超过 255 色的图也有损转换：低频色会被静默丢弃，'
-                         '对应像素变全透明（非最近色合并），不推荐使用')
+                    help='含长尾色的图也转换：保留最高频 255 色（零误差），'
+                         '长尾色并入最近色，误差集中在抗锯齿边缘')
     ap.add_argument('--verify', action='store_true',
-                    help='重读已转换的 I8 源，与 git HEAD 里的 RGB565A8 原版逐像素比对')
+                    help='重读已转换的 I8 源，与 git 历史里的 RGB565A8 原版逐像素比对')
     args = ap.parse_args()
     if args.verify:
         sys.exit(verify())
@@ -289,20 +302,21 @@ def main():
         if n_colors > VISIBLE_SLOTS and not args.force:
             skipped += 1
             continue
-        palette, index = quantize(px)
+        palette, index, lossless = quantize(px)
         text, payload_len = emit(name, w, h, palette, index)
         old = len(px) * 3
         before += old
         after += payload_len
         converted += 1
+        tag = 'lossless' if lossless else 'LOSSY'
         if args.check:
             print(f'  {fn:32s} {old / 1024:7.1f}K -> {payload_len / 1024:6.1f}K'
-                  f'  (w={w} h={h} colors={n_colors + 1})')
+                  f'  (w={w} h={h} colors={n_colors + 1} {tag})')
         else:
             with open(path, 'w', newline='\n') as f:
                 f.write(text)
             print(f'  rewrote {fn:32s} {old / 1024:7.1f}K -> {payload_len / 1024:6.1f}K'
-                  f'  (colors={n_colors + 1})')
+                  f'  (colors={n_colors + 1} {tag})')
     print(f'\n可无损转换 {converted} 张，超 255 色跳过 {skipped} 张')
     print(f'转换部分: {before / 1024:.1f}K -> {after / 1024:.1f}K'
           f'  (省 {(before - after) / 1024:.1f}K, -{(1 - after / before) * 100:.0f}%)'
