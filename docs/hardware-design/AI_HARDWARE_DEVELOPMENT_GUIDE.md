@@ -209,6 +209,51 @@ termination voltage, and no profile byte alters it. A profile for the wrong cell
 mis-scale the *reported* percentage; it cannot stop the cell from charging.
 
 
+### 9.2 Diagnosing a reading that will not move
+
+Nothing in the firmware clamps or rescales the percentage: `bsp_battery_soc()` returns the
+chip's high SOC byte untouched. So a value that stops moving is a gauge reading, and the
+boot log is built to say which kind:
+
+```text
+电量计诊断: profile=匹配(0xB9287814) 期望=0xB9287814 SOC=98.74/256 VCELL=0x33F5(4156562 uV) TEMP=0x90(32.0 C) CONFIG=0x00 SOC_ALERT=0x94
+```
+
+- `profile` compares a FNV-1a fingerprint of the 80 bytes actually stored in the gauge with
+  the fingerprint of the compiled profile (520 mAh = `0xEC96A1A5`, 500 mAh = `0xB9287814`).
+  `不匹配` means the gauge still holds another cell's bytes, so the percentage is unrelated
+  to the fitted cell. The profile is only rewritten on the first boot after a change.
+- `SOC=n.m/256` includes the low byte, the fractional percentage. A whole number with a
+  near-zero fraction means the chip's own calculation stopped; a fraction still climbing
+  means charging is in progress.
+- `VCELL` is the raw 14-bit value, LSB = 312.5 µV, printed **because integer mV destroys
+  the signal**: one mV is already 3.2 LSB, and near full charge the terminal voltage moves
+  only a few LSB over many minutes. A log showing the same mV every ten minutes is not
+  evidence that nothing is happening.
+
+The gauge also has no current register (VERSION, VCELL, SOC, TEMP, CONFIG, INT_CONF,
+SOC_ALERT, TEMP_MAX/MIN, VOLT_ID) and the board has no sense resistor or charger status
+pin, so the host cannot report charge current. "Still charging" versus "charge terminated"
+must be inferred from dV/dt and temperature. A percentage that tops out therefore has three
+indistinguishable-on-screen causes: an old profile still in the gauge, a charge that has not
+reached the profile's full-charge point, or a profile that does not describe the cell. The
+diagnostic line separates them; the percentage alone never does.
+
+While awake, the power layer logs the same values whenever they change:
+
+```text
+电量轨迹 SOC=98.184/256 VCELL=0x33FF(4159 mV) TEMP=34.0 C
+```
+
+Resetting the device to sample a charge is a mistake: the CW2017 datasheet states it treats
+the battery as "a free one relaxed more than 0.5 hours" at every power-up and derives the
+first SOC from the 14-bit voltage as an OCV. Each reset discards charge tracking and re-runs
+that lookup, so reboot sampling reports the same value forever and can never observe a
+charge. `POWER_BENCH_NO_SLEEP` in `main/power.c` exists for the opposite reason: light sleep
+powers down the USB PHY, so an unattended capture needs the device held awake. It is 0 in
+the shipping configuration and must stay 0; set it to 1 only for a bench capture.
+
+
 ## 10. Flash, console, and memory
 
 The current product and firmware baseline uses 8 MB Flash. `sdkconfig.defaults` fixes the image to 8 MB and disables automatic flash-size header rewriting. `partitions.csv` defines 24 KB NVS, 4 KB PHY data, one 3 MB factory application, protected `cardid` at `0x356000`, and permanent Recovery at `0x700000`. This is not an ESP-IDF dual-slot OTA layout: the factory-installed Recovery performs BLE installation and must remain at its fixed address. The bootloader enters it when UP/GPIO0 is held for five seconds. A detected non-8-MB device does not match this baseline; identify the board and flash part before changing the project default.

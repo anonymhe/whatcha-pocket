@@ -254,6 +254,43 @@ SOC 准确度取决于电芯与 profile 的匹配程度。本驱动给出的是�
 profile 只可能让「上报的百分比」比例偏移，不会阻止电芯充进电。
 
 
+### 9.2 诊断「读数不再变化」
+
+固件不做任何夹取或换算：`bsp_battery_soc()` 原样返回芯片 SOC 高字节。所以一个不再变化的数值是
+电量计读数问题，开机日志就是用来区分是哪种：
+
+```text
+电量计诊断: profile=匹配(0xB9287814) 期望=0xB9287814 SOC=98.74/256 VCELL=0x33F5(4156562 uV) TEMP=0x90(32.0 C) CONFIG=0x00 SOC_ALERT=0x94
+```
+
+- `profile` 用 FNV-1a 指纹比对「电量计里实际存着的 80 字节」与「编译进去的 profile」
+  （520 mAh = `0xEC96A1A5`，500 mAh = `0xB9287814`）。显示 `不匹配` 说明计里还是别的电芯的
+  字节，此时百分比与实际电芯无关。profile 只在换版后的第一次启动才会被重写。
+- `SOC=n.m/256` 带出低字节的小数百分比。整数位不动、小数贴近 0，说明芯片自己的计算到顶了；
+  小数还在涨，说明正在充电。
+- `VCELL` 是 14 bit 原始值，每 LSB = 312.5 µV，之所以打原始值是因为**整数 mV 会把信号抹掉**：
+  1 mV 已经等于 3.2 LSB，而满充附近端电压十几分钟才变化几个 LSB。每十分钟都是同一个 mV，
+  并不构成「什么都没发生」的证据。
+
+电量计也没有电流寄存器（只有 VERSION、VCELL、SOC、TEMP、CONFIG、INT_CONF、SOC_ALERT、
+TEMP_MAX/MIN、VOLT_ID），板子上也没有采样电阻或充电器状态脚，因此主机侧报不出充电电流。
+「还在充」与「已截止」只能靠 dV/dt 和温度推断。所以百分比上不去有三种在屏幕上无法区分的原因：
+计里残留旧 profile、还没充到 profile 认定的满充点、或 profile 不描述这块电芯。诊断行能分开它们，
+单看百分比永远分不开。
+
+设备醒着时，电源层会在数值变化时打印同样的读数：
+
+```text
+电量轨迹 SOC=98.184/256 VCELL=0x33FF(4159 mV) TEMP=34.0 C
+```
+
+**靠复位设备来采样充电过程是错的**：CW2017 数据手册写明它每次上电都把电芯当作「已静置 0.5 小时
+以上」，用 14 bit 电压当开路电压反推初始 SOC。每次复位都会丢弃充电跟踪、重跑这次查表，所以复位
+采样永远读到同一个值，根本观察不到充电。`main/power.c` 里的 `POWER_BENCH_NO_SLEEP` 则是为了相反
+的目的：light sleep 会关掉 USB PHY，无人值守采集必须让设备保持唤醒。它在出货配置里是 0，且必须
+保持 0；只在台架采集时临时改 1。
+
+
 ## 10. Flash、控制台和资源预算
 
 当前产品与固件基线使用 8 MB Flash。`sdkconfig.defaults` 固定使用 8 MB Flash 镜像配置，并关闭 `CONFIG_ESPTOOLPY_HEADER_FLASHSIZE_UPDATE`（不按探测容量回写镜像头，便于 `idf.py merge-bin`）；`partitions.csv` 提供 24 KB NVS、4 KB PHY data、3 MB factory app、位于 `0x356000` 的保护 `cardid`，以及位于 `0x700000` 的永久 Recovery。这不是 ESP-IDF 双槽 OTA 布局；工厂预装 Recovery 负责 BLE 安装，且必须保持固定地址。开机持续按住上键/GPIO0 5 秒时，bootloader 会进入 Recovery。若实机探测结果不是 8 MB，则该设备不符合当前基线；修改项目默认值前应先确认板卡和 Flash 料号。

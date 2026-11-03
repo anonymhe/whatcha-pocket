@@ -7,12 +7,14 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <stdbool.h>
+#include <stdint.h>
 
 static const char *TAG = "bsp_batt";
 
 #define CW_REG_VERSION   0x00   // 版本号,上电应答即代表芯片在位
 #define CW_REG_VCELL_H   0x02   // 14bit 电压,V(uV) = raw * 312.5
 #define CW_REG_SOC_H     0x04   // 高字节 = 整数百分比;低字节(0x05)= 1/256 %
+#define CW_REG_TEMP      0x06   // 电芯温度,厂商约定的编码,仅用于诊断
 #define CW_REG_CONFIG    0x08   // 0xF0=睡眠 / 0x30=复位态 / 0x00=正常
 #define CW_REG_SOC_ALERT 0x0B   // bit7=profile UPDATE_FLAG;bit6:0=SOC 告警阈值
 #define CW_REG_PROFILE   0x10   // 80 字节电池 profile 起始地址
@@ -72,6 +74,18 @@ _Static_assert(sizeof(s_profile_utl_520mah) == CW_PROFILE_SIZE,
                "utl 520mAh CW2017 profile must contain exactly 80 bytes");
 _Static_assert(sizeof(s_profile_wanli_500mah) == CW_PROFILE_SIZE,
                "wanli 500mAh CW2017 profile must contain exactly 80 bytes");
+
+// 电量计里实际存的是哪一份 profile，只有把它读出来比对才知道。日志里报指纹而非
+// 80 字节，一行就能分清「还是旧电芯的字节」和「已经是本固件这一份」。
+// FNV-1a：够短、够稳定，只用于日志核对，不参与任何判定。
+static uint32_t profile_fingerprint(const uint8_t *bytes) {
+    uint32_t hash = 2166136261u;
+    for (size_t i = 0; i < CW_PROFILE_SIZE; i++) {
+        hash ^= bytes[i];
+        hash *= 16777619u;
+    }
+    return hash;
+}
 
 static i2c_master_dev_handle_t s_dev;
 
@@ -156,6 +170,55 @@ static int cw_wait_soc_ready(void) {
     return -1;
 }
 
+// SOC 到不了 100 时，仅凭屏上的百分比无法判断是谁的问题。把电量计里真正存着的
+// profile 指纹、SOC 的两个字节、电压、温度、CONFIG 和 SOC_ALERT 一起打出来：
+//   - profile 指纹与本固件不一致 → 计里不是这份字节，读数与电芯无关；
+//   - 指纹对、SOC 低字节（1/256%）也贴在 0x00 附近 → 芯片算到这儿就到顶了，
+//     说明 profile 里的满充电压/容量与这块电芯对不上；
+//   - SOC 低字节还在往上涨、电压已到 4.1V 以上 → 只是还没充到 profile 认的
+//     满充点，属正常充电末端，等充满再看。
+//
+// 电压按原始 14 bit 打印（LSB=312.5uV）而不是整数 mV：充电末端每几分钟只涨几
+// 个 LSB，换算成 mV 后取整会被整个抹平，看上去就像「纹丝不动」。
+// CW2017 没有电流寄存器，也不接采样电阻——电流只能靠硬件（采样电阻/充电器状态
+// 脚）测，主机侧无从读取。所以「还在充 / 已截止」只能由 dV/dt 和温度来推断。
+static void cw_log_diagnostics(void) {
+    uint8_t stored[CW_PROFILE_SIZE] = { 0 };
+    bool readable = true;
+    for (size_t i = 0; i < CW_PROFILE_SIZE; i++) {
+        if (cw_read((uint8_t)(CW_REG_PROFILE + i), &stored[i], 1) != 0) {
+            readable = false;
+            break;
+        }
+    }
+
+    uint8_t soc[2] = { 0 }, cfg = 0, alert = 0, temp = 0, vcell[2] = { 0 };
+    const bool soc_ok = cw_read(CW_REG_SOC_H, soc, 2) == 0;
+    const bool cfg_ok = cw_read(CW_REG_CONFIG, &cfg, 1) == 0;
+    const bool alert_ok = cw_read(CW_REG_SOC_ALERT, &alert, 1) == 0;
+    const bool temp_ok = cw_read(CW_REG_TEMP, &temp, 1) == 0;
+    const bool vcell_ok = cw_read(CW_REG_VCELL_H, vcell, 2) == 0;
+
+    const uint32_t stored_hash = profile_fingerprint(stored);
+    const uint32_t expected_hash = profile_fingerprint(s_battery_profile);
+    const char *profile_state = !readable ? "读取失败"
+                                           : (stored_hash == expected_hash ? "匹配" : "不匹配");
+    const unsigned vcell_raw = (unsigned)(((vcell[0] << 8) | vcell[1]) & 0x3FFF);
+    const int t10 = (int)temp * 5 - 400;   // -40 + Value/2，单位 0.1 °C
+    const int t_abs = t10 < 0 ? -t10 : t10;
+
+    ESP_LOGI(TAG, "电量计诊断: profile=%s(0x%08X) 期望=0x%08X "
+                  "SOC=%d%s%d/256 VCELL=0x%04X(%u uV) TEMP=0x%02X(%s%d.%d C) "
+                  "CONFIG=0x%02X SOC_ALERT=0x%02X",
+             profile_state, (unsigned)(readable ? stored_hash : 0),
+             (unsigned)expected_hash,
+             soc_ok ? soc[0] : -1, soc_ok ? "." : "?", soc_ok ? soc[1] : 0,
+             vcell_ok ? vcell_raw : 0, vcell_ok ? vcell_raw * 3125 / 10 : 0,
+             (unsigned)(temp_ok ? temp : 0xFF),
+             t10 < 0 ? "-" : "", t_abs / 10, t_abs % 10,
+             (unsigned)(cfg_ok ? cfg : 0xFF), (unsigned)(alert_ok ? alert : 0xFF));
+}
+
 esp_err_t bsp_battery_init(void) {
     if (s_dev) return ESP_OK;
 
@@ -215,6 +278,7 @@ esp_err_t bsp_battery_init(void) {
 
     ESP_LOGI(TAG, "CW2017 ready: SOC=%d%%, voltage=%d mV",
              bsp_battery_soc(), bsp_battery_mv());
+    cw_log_diagnostics();
     return ESP_OK;
 
 fail:
@@ -261,4 +325,28 @@ int bsp_battery_mv(void) {
     if (cw_read(CW_REG_VCELL_H, b, 2) != 0) return -1;
     uint32_t raw = ((uint32_t)b[0] << 8 | b[1]) & 0x3FFF;   // 14bit
     return (int)((raw * 3125) / 10000);                     // raw * 312.5uV → mV
+}
+
+// 原始值不换算：3150 uV 级的 LSB 换算成 mV 后取整就没了分辨率。
+int bsp_battery_mv_raw(void) {
+    uint8_t b[2] = { 0 };
+    if (cw_read(CW_REG_VCELL_H, b, 2) != 0) return -1;
+    return (int)(((uint32_t)b[0] << 8 | b[1]) & 0x3FFF);
+}
+
+// 高字节是整数百分比、低字节是 1/256%，合起来是芯片自己给出的完整读数。
+// 不在这里判 >100：调用方要看的正是「是不是真的到顶了」。
+int bsp_battery_soc_raw(void) {
+    uint8_t b[2] = { 0 };
+    if (cw_read(CW_REG_SOC_H, b, 2) != 0) return -1;
+    return (int)(((unsigned)b[0] << 8) | b[1]);
+}
+
+// 数据手册 TEMP(0x06)：无符号 8 bit，LSB = 0.5 °C，量程 -40..87.5 °C，
+// 换算 TEMP(°C) = -40 + Value/2。内核 cw2015 驱动写作 value*10/2-400（单位 0.1 °C）。
+// 返回 0.1 °C 为单位，避免在主日志里做浮点。
+int bsp_battery_temp_tenths(void) {
+    uint8_t t = 0;
+    if (cw_read(CW_REG_TEMP, &t, 1) != 0) return -1;
+    return (int)t * 10 / 2 - 400;
 }
