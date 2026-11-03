@@ -31,6 +31,7 @@ Store reusable source images in `images/`.
 - Prefer formats suitable for the 240 × 320 RGB565 display and account for Flash and internal RAM.
 - Preserve editable sources where licensing permits, and record the source and license.
 - Never commit device QR secrets, credentials, or personal data in images.
+- Convert new images with `tools/gen_images.py` (LVGL I8 indexed, see [image assets](../docs/development/engineering/image-assets.md)); sprites under 24 px per side are not worth indexing.
 
 ## Music and sound effects
 
