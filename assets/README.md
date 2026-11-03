@@ -32,6 +32,27 @@ Store reusable source images in `images/`.
 - Preserve editable sources where licensing permits, and record the source and license.
 - Never commit device QR secrets, credentials, or personal data in images.
 
+## Battery profiles
+
+Two CW2017 fuel-gauge profiles are kept here because they describe two different
+cells, not two calibrations of one cell. They differ in 51 of 80 bytes, so the
+state-of-charge curve changes completely.
+
+| File | Cell | Source |
+| --- | --- | --- |
+| [`battery/utl-520mah-upstream-42f16ab9.txt`](battery/utl-520mah-upstream-42f16ab9.txt) | UTL 520 mAh | byte-for-byte from `WatchaAI/WATCHA-POCKET` (file as of 42f16ab9), also shipped by this fork up to v0.1.3 |
+| [`battery/wanli-500mah-profile2-xil40x-20261020.txt`](battery/wanli-500mah-profile2-xil40x-20261020.txt) | Wanli New Energy 500 mAh, profile2 / XIL40X | supplied 2026-10-20, ported from ai-passport |
+
+Format: 80 lines of two uppercase hex digits, one byte per line in register order.
+Both are embedded in `components/bsp/src/bsp_battery.c`; only one is compiled, chosen by
+`CONFIG_WATCHA_BATTERY_PROFILE_WANLI_500MAH` (`components/bsp/Kconfig`, default `n` = UTL
+520 mAh). `tests/test_battery_profile.py` pins each archive to the driver and to the
+FNV-1a fingerprints the boot log prints (520 = `0xEC96A1A5`, 500 = `0xB9287814`).
+
+These are fuel-gauge profiles, not charging configurations and not interchangeable
+between cells of the same nominal capacity. See the
+[hardware guide](../docs/hardware-design/AI_HARDWARE_DEVELOPMENT_GUIDE.md#9-cw2017-fuel-gauge).
+
 ## Music and sound effects
 
 Store reusable music and sound-effect sources in `music/`.

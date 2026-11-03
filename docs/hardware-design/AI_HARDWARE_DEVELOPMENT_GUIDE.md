@@ -156,14 +156,58 @@ The sfx task's streaming buffers are the main transient audio heap users. Prefer
 
 ## 9. CW2017 fuel gauge
 
-Initialization reads VERSION and checks the profile update flag plus all 80 profile bytes. When needed, it puts the gauge to sleep, writes and verifies the supplied profile for the specified 520 mAh cell, sets the update flag, restarts the gauge with the required `0x30` to `0x00` sequence, and waits up to five seconds for a valid SOC. Replacing the cell requires a matching vendor-generated profile and renewed charge/discharge validation.
+Two vendor profiles are archived under `assets/battery/` and exactly one is compiled in,
+selected by `CONFIG_WATCHA_BATTERY_PROFILE_WANLI_500MAH` in `components/bsp/Kconfig`:
+
+| Option | Profile | Cell |
+| --- | --- | --- |
+| `n` (default) | [`utl-520mah-upstream-42f16ab9.txt`](../../assets/battery/utl-520mah-upstream-42f16ab9.txt) | UTL 520 mAh, the profile the public `WatchaAI/WATCHA-POCKET` firmware carries and this fork shipped up to v0.1.3 |
+| `y` | [`wanli-500mah-profile2-xil40x-20261020.txt`](../../assets/battery/wanli-500mah-profile2-xil40x-20261020.txt) | Wanli New Energy 500 mAh, profile2 / XIL40X |
+
+The two are not alternative calibrations of one cell: 51 of the 80 bytes differ, so the SOC
+curve is completely different. Switching them changes only the 80 bytes written to the
+gauge, never the charging circuit, charge current, voltage limits, pin map, or partitions.
+
+Initialization reads VERSION and checks the profile update flag plus all 80 profile bytes.
+When needed, it puts the gauge to sleep, writes and verifies the configured profile, sets
+the update flag, restarts the gauge with the required `0x30` to `0x00` sequence, and waits
+up to five seconds for a valid SOC. A matching profile is reused without rewriting.
+Replacing the cell requires a matching vendor-generated profile and renewed charge/discharge
+validation.
 
 - SOC uses registers `0x04–0x05`; values above 100 are treated as not ready and return `-1`.
 - Voltage uses the 14-bit value at `0x02–0x03`, converted as `raw × 312.5 µV`, and returned in mV.
 - Transactions use a 100 ms timeout at 100 kHz.
 - A missing device returns `ESP_ERR_NOT_FOUND`; the battery page is disabled without stopping the application.
 
-Accurate production SOC requires the cell parameters, CW2017 datasheet/vendor profile, and full charge/discharge validation.
+Accurate production SOC requires the cell parameters, CW2017 datasheet/vendor profile, and
+full charge/discharge validation. A correct profile is necessary but not sufficient: the
+gauge derives SOC from open-circuit voltage against the profile's curve, so a profile for a
+different cell reports a plausible but wrong percentage instead of failing.
+
+### 9.1 Choosing the profile
+
+The A/B below was run on one unit, on the same charger, minutes apart, with the compiled
+profile as the only variable:
+
+| Compiled profile | SOC | VCELL |
+| --- | --- | --- |
+| Wanli 500 mAh | 98.184 % | 4159.7 mV |
+| UTL 520 mAh | **100.0 %** | 4165.3 mV |
+
+The pack was the same in both runs, so the gauge was reading one physical pack through two
+different OCV curves: the 500 mAh curve places about 4.160 V at 98.2 %, the 520 mAh curve
+places about 4.165 V at 100 %. The hardware therefore carries the 520 mAh cell, which is why
+it is the default.
+
+This is also the failure mode to remember: a percentage that stops short of 100 % can mean
+the profile does not describe the cell, but it can equally mean the pack was simply not
+being charged at the time. Confirm which by watching VCELL, not the percentage.
+
+The charging circuit is outside the firmware's control: it sets the current and the
+termination voltage, and no profile byte alters it. A profile for the wrong cell can only
+mis-scale the *reported* percentage; it cannot stop the cell from charging.
+
 
 ## 10. Flash, console, and memory
 

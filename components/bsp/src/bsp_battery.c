@@ -23,10 +23,29 @@ static const char *TAG = "bsp_batt";
 #define CW_UPDATE_FLAG    0x80
 #define CW_PROFILE_SIZE   80
 
-// Wanli New Energy 500 mAh, profile2 / XIL40X / 2026-10-20.
-// Exact vendor bytes: assets/battery/wanli-500mah-profile2-xil40x-20261020.txt.
-// Infer the array length so the assertion also catches missing initializer bytes.
-static const uint8_t s_battery_profile[] = {
+// 两份厂家 profile 择一编译，由 CONFIG_WATCHA_BATTERY_PROFILE_WANLI_500MAH 决定
+// （见 sdkconfig.defaults）。它们不是同一块电芯的两种标定，而是两块不同电芯：
+// 80 字节里有 51 字节不同，SOC 曲线因此完全不同。
+//
+// 优特利 520 mAh：WatchaAI/WATCHA-POCKET 开源固件一直携带的那一份（本 fork 的
+// v0.1.3 及更早版本也是它）。实测该机在这份 profile 下能正常报到 100%。
+// 原始字节: assets/battery/utl-520mah-upstream-42f16ab9.txt
+static const uint8_t s_profile_utl_520mah[] = {
+    0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0xAD, 0xC7, 0xC8, 0xCA, 0xBD, 0xB1, 0xC1, 0x94,
+    0x88, 0xD1, 0xBD, 0x97, 0x88, 0x66, 0x56, 0x4A,
+    0x3F, 0x33, 0x26, 0x5C, 0x37, 0xD1, 0x27, 0xD8,
+    0xCC, 0xB7, 0xCF, 0xB3, 0xB2, 0xAE, 0xA6, 0x9E,
+    0x99, 0x97, 0x9B, 0x86, 0x47, 0x1E, 0x17, 0x26,
+    0x49, 0x96, 0xD9, 0xE1, 0xDD, 0xDC, 0xD4, 0x59,
+    0x00, 0x00, 0x90, 0x02, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x5C,
+};
+
+// 万锂新能源 500 mAh，profile2 / XIL40X / 2026-10-20，来自上游 ai-passport。
+// 原始字节: assets/battery/wanli-500mah-profile2-xil40x-20261020.txt
+static const uint8_t s_profile_wanli_500mah[] = {
     0x5A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0xAF, 0xCA, 0xCA, 0xC0, 0xB4, 0xA8, 0xCB, 0xAA,
     0x9F, 0xCF, 0xB5, 0x8A, 0x70, 0x56, 0x4B, 0x40,
@@ -39,8 +58,20 @@ static const uint8_t s_battery_profile[] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xB7,
 };
 
-_Static_assert(sizeof(s_battery_profile) == CW_PROFILE_SIZE,
-               "CW2017 battery profile must contain exactly 80 bytes");
+#if CONFIG_WATCHA_BATTERY_PROFILE_WANLI_500MAH
+static const uint8_t *const s_battery_profile = s_profile_wanli_500mah;
+static const char *const s_battery_profile_name = "万锂新能源 500mAh profile2 XIL40X 20261020";
+#else
+static const uint8_t *const s_battery_profile = s_profile_utl_520mah;
+static const char *const s_battery_profile_name = "优特利 520mAh";
+#endif
+
+// 两份长度都要锁死：少写一个初始值会让 u8 数组静默变短，而写入时用的是
+// CW_PROFILE_SIZE，读到的就是越界数据。
+_Static_assert(sizeof(s_profile_utl_520mah) == CW_PROFILE_SIZE,
+               "utl 520mAh CW2017 profile must contain exactly 80 bytes");
+_Static_assert(sizeof(s_profile_wanli_500mah) == CW_PROFILE_SIZE,
+               "wanli 500mAh CW2017 profile must contain exactly 80 bytes");
 
 static i2c_master_dev_handle_t s_dev;
 
@@ -157,7 +188,7 @@ esp_err_t bsp_battery_init(void) {
     }
 
     if (!profile_matches) {
-        ESP_LOGI(TAG, "写入万锂新能源 500mAh profile2 XIL40X 20261020");
+        ESP_LOGI(TAG, "写入%s profile", s_battery_profile_name);
         if (cw_update_profile() != 0) {
             ESP_LOGE(TAG, "自定义 profile 写入失败");
             e = ESP_FAIL;
@@ -173,7 +204,7 @@ esp_err_t bsp_battery_init(void) {
             e = ESP_FAIL;
             goto fail;
         }
-        ESP_LOGI(TAG, "万锂新能源 500mAh profile2 XIL40X 20261020 已匹配");
+        ESP_LOGI(TAG, "%s profile 已匹配", s_battery_profile_name);
     }
 
     if (cw_wait_soc_ready() != 0) {

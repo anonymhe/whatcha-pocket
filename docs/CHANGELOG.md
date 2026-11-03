@@ -6,6 +6,8 @@
 
 ## Unreleased
 
+- Fixed the battery percentage stopping at 98 %. A full-image flash to v0.1.4 swapped the CW2017 profile from the UTL 520 mAh cell to a Wanli 500 mAh one, but the hardware carries the 520 mAh pack: that curve treats about 4.160 V as 98.2 %, so the reading could never reach 100 % even though the charging circuit still terminated normally. The 520 mAh profile is restored as the default and the choice is now a build-time option, `CONFIG_WATCHA_BATTERY_PROFILE_WANLI_500MAH` (default `n`), between two byte-verified archives under `assets/battery/`. An A/B run on one device, same charger, minutes apart, went 98.2 % -> 100.0 % with the profile as the only variable.
+
 - Hardened the Bluetooth sync handler. A profile packet too large for the receive buffer (or shorter than one byte) now replies with the packet-error result instead of silently dropping the transfer, so the client fails fast rather than timing out. Profile writes to flash are now all-or-nothing: the "synced" flag is cleared before the fields are written and only set again if every write succeeds, so a write that fails partway leaves the device as "not synced" instead of mixing old and new profile data, and a storage failure reports a distinct result code. Noted in code that the profile characteristic is intentionally unauthenticated for mini-program compatibility — while the sync screen is open, any device in range can overwrite the profile.
 
 - Released the Bluetooth link the instant a sync succeeds instead of keeping the phone connected through the two-second "done" prompt. The sync screen now calls a dedicated release that stops advertising and drops the active connection as soon as the profile arrives; the NimBLE host stays resident as before, and leaving the page still tears the link down as a fallback. The disconnect now targets the saved connection handle instead of a sentinel NimBLE treated as "not found" (so the link is actually dropped), and advertising recovers after a host reset instead of wedging the sync screen until reboot.
@@ -43,7 +45,6 @@
 - Rewrote the workshop intro entry as a short instruction manual written in the mascot's own voice: it introduces CHACKER as a coding assistant the user summons by asking an AI tool to read the repository's guide file, states how it speaks and that it confirms a plan before writing code, and keeps the two-step recipe plus the scope and flashing rules for adding a mini-app.
 
 - Reworked the sync screen's hint line below the QR code so it mirrors the spacing of the hint above it, and changed it to show a live timeout countdown alongside the current Bluetooth status (starting up, ready, or connected) while keeping the device number. A small random mascot now sits in the center of the QR code, on a backing plate sized to the mascot itself rather than to the source artwork, so the white area no longer spreads across a quarter of the code.
-
 
 - Replaced the fixed six-icon home grid with a scrollable card launcher: an on-device usage guide page, the existing features, and a slot for community mini-games now share one up/down list, with the selected card centered and its neighbors peeking in.
 

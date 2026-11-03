@@ -1,0 +1,22 @@
+menu "WATCHA BSP"
+
+    config WATCHA_BATTERY_PROFILE_WANLI_500MAH
+        bool "Use the Wanli New Energy 500 mAh CW2017 profile"
+        default n
+        help
+            Selects which of the two vendor CW2017 profiles the BSP writes into the
+            fuel gauge. The two profiles describe different cells: 51 of the 80 bytes
+            differ, so the state-of-charge curve changes completely.
+
+            Default (n): the UTL 520 mAh profile carried by the upstream
+            WatchaAI/WATCHA-POCKET firmware and by this fork up to v0.1.3.
+
+            y: the Wanli New Energy 500 mAh profile2 / XIL40X dated 2026-10-20,
+            ported from ai-passport.
+
+            This choice only changes the 80 profile bytes. It does not alter the
+            charging circuit, charge current, voltage limits, pin map, Flash
+            partitions, or the NVS layout. Replacing the cell requires a profile
+            generated for that cell plus renewed charge/discharge validation.
+
+endmenu
