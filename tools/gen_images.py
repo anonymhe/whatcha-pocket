@@ -36,6 +36,20 @@ IMAGE_DIR = os.path.join(ROOT, 'main', 'assets', 'images')
 
 MAX_PALETTE = 256          # I8 索引空间
 VISIBLE_SLOTS = 255        # 索引 0 留给透明
+# 面板背景色 C_BG (main/pages.h)。长尾色的归属按「叠加到它上面之后」的颜色距离
+# 判定，因为这个颜色才是用户看到的。改背景色会影响合并结果，需要重新生成。
+C_BG = np.array([0x0F, 0x0F, 0x1A], dtype=np.float64)
+# 合并长尾色时对「饱和度下降」的惩罚权重。0 会让彩色像素被并入灰阶（黄变灰、
+# 绿变灰），过高又会把误差推回色偏。0.1 是实测平衡点，见 quantize() 的注释。
+HUE_PROTECTION = 0.1
+
+
+def _saturation(rgb):
+    """HSV 饱和度，0..1。用来识别「彩色被并入灰阶」这种感知上很糟的替换。"""
+    f = rgb.astype(np.float64) / 255.0
+    mx = f.max(axis=1)
+    mn = f.min(axis=1)
+    return np.where(mx == 0, 0.0, (mx - mn) / np.maximum(mx, 1e-9))
 
 MAP_RE = re.compile(r'(uint8_t\s+\w+_map\[\]\s*=\s*\{)')
 DSC_RE = re.compile(
@@ -114,12 +128,25 @@ def quantize(px):
         slot[i] = rank + 1
     if keep < len(colors):
         rest = order[keep:]
-        # alpha 权重取 4：半透明边缘像素若被并入纯不透明色，合成到背景上会
-        # 出现明显跳变。实测 38 张图 alpha 误差 >32 的像素由 288 降至 187。
-        weight = np.array([1, 1, 1, 4], dtype=np.int32)
-        d = (((colors[rest][:, None, :].astype(np.int32)
-               - palette[1:keep + 1][None, :, :].astype(np.int32)) ** 2) * weight).sum(axis=2)
-        slot[rest] = d.argmin(axis=1) + 1
+        # 长尾色的归属按「叠加到面板背景后的颜色」判定，而不是 RGBA 欧氏距离。
+        # 上屏的就是合成色，所以它才是正确的判据：曾经用 alpha 加权欧氏距离，
+        # 把半透明粉 (248,176,184,a=77) 判成最近邻黑 (0,0,0,a=77)——alpha 精确
+        # 匹配盖过了巨大的色差，粉色直接变黑。改用合成色只让全量 >32 的像素从
+        # 229 降到 141。
+        def to_composite(arr):
+            f = arr.astype(np.float64)
+            return f[:, :3] * f[:, 3:4] / 255.0 + C_BG * (1 - f[:, 3:4] / 255.0)
+        cost = ((to_composite(colors[rest])[:, None, :]
+                 - to_composite(palette[1:keep + 1])[None, :, :]) ** 2).sum(axis=2)
+        # 单看合成色会牺牲色相：半透明黄 (248,232,80,a=101) 在深色底上和灰绿
+        # (80,84,80) 数值几乎一样，于是被判成最近邻，黄变灰、色相偏 66~120 度。
+        # 精灵还会被缩放到别的底色上，那里的偏差更明显。这里对饱和度下降加惩罚，
+        # 权重 0.1 是实测的平衡点：变灰像素 73 -> 29，总误差 141 -> 175。
+        src_sat = _saturation(colors[rest][:, :3])
+        pal_sat = _saturation(palette[1:keep + 1][:, :3])
+        drop = np.clip(src_sat[:, None] - pal_sat[None, :], 0, None)
+        cost += (drop ** 2) * (255.0 ** 2) * 3 * HUE_PROTECTION
+        slot[rest] = cost.argmin(axis=1) + 1
     codes = np.zeros(len(colors), dtype=np.int64)
     for i, c in enumerate(colors):
         codes[i] = (int(c[0]) << 24) | (int(c[1]) << 16) | (int(c[2]) << 8) | int(c[3])
