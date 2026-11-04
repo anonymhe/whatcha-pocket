@@ -360,19 +360,12 @@ void power_service(bool ready)
     }
 
     const sleep_input_t in = {
-<<<<<<< HEAD
         .idle_us          = idle_us,
         .ready            = ready,
-        .caffeine         = holds_any(POWER_CAFFEINE),
+        .caffeine         = POWER_BENCH_NO_SLEEP || holds_any(POWER_CAFFEINE),
         .radio_busy       = holds_any(POWER_RADIO_ACTIVE),
         .usb_attached     = usb_attached,
         .standby_deferred = usb_defer_active(),
-=======
-        .idle_us    = esp_timer_get_time() - last_activity_us(),
-        .ready      = ready,
-        .caffeine   = POWER_BENCH_NO_SLEEP || holds_any(POWER_CAFFEINE),
-        .radio_busy = holds_any(POWER_RADIO_ACTIVE),
->>>>>>> fix/battery-capped-98pct
     };
     const sleep_stage_t next = sleep_policy_stage(&s_policy, &in);
 
