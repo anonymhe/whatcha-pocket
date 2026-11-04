@@ -43,10 +43,12 @@ CONFIG_LV_USE_QRCODE=y
 # bin decoder 会把整张 I8 图解成 w*h*4 的 ARGB8888 塞进 64KB LVGL 池,一张 96x96
 # 就要 36KB,必炸。LVGL 默认即为 n,这里显式钉死,防止上游改动悄悄改变内存行为。
 CONFIG_LV_BIN_DECODER_RAM_LOAD=n
-# I8 图片的 C 源里每行索引按 4 字节对齐摆放（stride=(w+3)&~3）。LVGL 用这个
-# 值计算每行的理论 stride，两者必须一致，否则整行错位。默认值即 1，这里显式
-# 钉死，避免上游改动让已生成的素材全部失效。
-CONFIG_LV_DRAW_BUF_STRIDE_ALIGN=1
+# I8 图片的 C 源里每行索引按 4 字节对齐摆放（stride=(w+3)&~3）。LVGL 用
+# LV_ROUND_UP((w*bpp+7)/8, LV_DRAW_BUF_STRIDE_ALIGN) 算理论 stride，两者必须
+# 一致，否则整行错位。要等于 (w+3)&~3，这个值必须是 4；写成 1 时 LVGL 认为
+# stride=w（22px 图标会算成 22 而不是 24），只是恰好因为 bin decoder 一律按
+# header.stride 寻址才没出事。显式钉 4，别让它跟着上游默认值漂。
+CONFIG_LV_DRAW_BUF_STRIDE_ALIGN=4
 
 # --- 系统 ---
 CONFIG_FREERTOS_HZ=1000
