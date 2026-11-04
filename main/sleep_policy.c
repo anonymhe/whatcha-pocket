@@ -45,11 +45,13 @@ sleep_stage_t sleep_policy_stage(const sleep_policy_t *policy, const sleep_input
 
 bool sleep_policy_usb_defer_active(int64_t seen_us, int64_t now_us, int64_t grace_us)
 {
-    // 没见过主机：没有退避可言。负数被视为时钟回绕，同样按「没见过」处理，
-    // 否则 now - seen 会算出巨大的正数，设备再也不会被拦住。
+    // 没见过主机：没有退避可言。
     if (seen_us <= 0) return false;
     if (grace_us <= 0) return false;
     const int64_t elapsed = now_us - seen_us;
-    if (elapsed < 0) return false;
+    // 时钟倒退（now 早于 seen）：不知道真实间隔，按「还在窗口内」处理。
+    // 这里宁可晚睡也不能早睡 —— 早睡的代价是把正在通信的串口断掉，
+    // 晚睡只是多耗一点 USB 供电的电，而那本来就不吃电池。
+    if (elapsed < 0) return true;
     return elapsed < grace_us;
 }

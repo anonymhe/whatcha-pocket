@@ -135,5 +135,13 @@ int main(void)
     assert(!sleep_policy_usb_defer_active(1000, 1000, 0));
     assert(!sleep_policy_usb_defer_active(1000, 1000, -1));
 
+    // 按键不得抹掉「最后一次看到主机」的记录：mark_activity() 只重新武装日志，
+    // 不清 seen。否则「插线 4 分钟 → 按一下键 → 立刻拔线」会只剩 idle 的 5 分钟，
+    // 比承诺的 10 分钟缓冲更早入睡，正好丢掉要保的串口。
+    // 这里用同一个 seen 值模拟「按键之后仍在窗口内」：仍在退避。
+    assert(sleep_policy_usb_defer_active(unplug, unplug + 1000, grace));
+    // 时钟倒退（now < seen）时按「仍在窗口内」处理：宁可晚睡，不可早睡。
+    assert(sleep_policy_usb_defer_active(1000, 999, grace));
+
     return 0;
 }

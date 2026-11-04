@@ -78,8 +78,9 @@ static void mark_activity(void)
     const int64_t now = esp_timer_get_time();
     portENTER_CRITICAL(&s_time_lock);
     s_last_activity_us = now;
-    // 用户刚操作过：USB 退避作废，之后按正常的 5 分钟节奏重新走。
-    s_usb_host_seen_us = 0;
+    // 只重新武装日志，不清 USB 退避窗口：窗口按「最后一次看到主机」起算，
+    // 按键不改变主机是否在场这一事实。若在这里清零，拔线后就只剩 idle 的
+    // 5 分钟，比 power.h 承诺的 10 分钟缓冲更早入睡 —— 正好丢掉要保的串口。
     s_usb_block_logged = false;
     portEXIT_CRITICAL(&s_time_lock);
 }
