@@ -8,6 +8,7 @@
 #include "freertos/task.h"
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 
 static const char *TAG = "bsp_batt";
 
@@ -205,17 +206,23 @@ static void cw_log_diagnostics(void) {
                                            : (stored_hash == expected_hash ? "匹配" : "不匹配");
     const unsigned vcell_raw = (unsigned)(((vcell[0] << 8) | vcell[1]) & 0x3FFF);
     const int t10 = (int)temp * 5 - 400;   // -40 + Value/2，单位 0.1 °C
-    const int t_abs = t10 < 0 ? -t10 : t10;
+    // 温度读失败时 temp 仍是 0，换算出来是 -40.0 °C —— 一个看起来合法的读数。
+    // 这种情况打 n/a，别让人以为电芯真的在冰点。
+    char temp_text[16] = "n/a";
+    if (temp_ok) {
+        const int t_abs = t10 < 0 ? -t10 : t10;
+        snprintf(temp_text, sizeof(temp_text), "%s%d.%d C",
+                 t10 < 0 ? "-" : "", t_abs / 10, t_abs % 10);
+    }
 
     ESP_LOGI(TAG, "电量计诊断: profile=%s(0x%08X) 期望=0x%08X "
-                  "SOC=%d%s%d/256 VCELL=0x%04X(%u uV) TEMP=0x%02X(%s%d.%d C) "
+                  "SOC=%d%s%d/256 VCELL=0x%04X(%u uV) TEMP=0x%02X(%s) "
                   "CONFIG=0x%02X SOC_ALERT=0x%02X",
              profile_state, (unsigned)(readable ? stored_hash : 0),
              (unsigned)expected_hash,
              soc_ok ? soc[0] : -1, soc_ok ? "." : "?", soc_ok ? soc[1] : 0,
              vcell_ok ? vcell_raw : 0, vcell_ok ? vcell_raw * 3125 / 10 : 0,
-             (unsigned)(temp_ok ? temp : 0xFF),
-             t10 < 0 ? "-" : "", t_abs / 10, t_abs % 10,
+             (unsigned)(temp_ok ? temp : 0xFF), temp_text,
              (unsigned)(cfg_ok ? cfg : 0xFF), (unsigned)(alert_ok ? alert : 0xFF));
 }
 

@@ -23,7 +23,7 @@ OUT = sys.argv[3] if len(sys.argv) > 3 else "build/battery_trace.log"
 
 TRACE = re.compile(
     r"电量轨迹 SOC=(\d+)\.(\d+)/256 VCELL=0x([0-9A-F]{4})\((-?\d+) mV\) "
-    r"TEMP=(-?\d+)\.(\d+) C")
+    r"TEMP=(-?\d+)\.(\d+) C|TEMP=n/a")
 DIAG = re.compile(
     r"profile=(\S+?)\(0x([0-9A-F]{8})\).*?SOC=(\d+)\.(\d+)/256 "
     r"VCELL=0x([0-9A-F]{4})\((\d+) uV\) TEMP=0x([0-9A-F]{2})\((-?\d+)\.(\d+) C\)")
@@ -62,15 +62,18 @@ with open(OUT, "a", encoding="utf-8") as f:
                       f"profile={fp}", flush=True)
             elif t:
                 sh, sf, vh, mv, th, tf = t.groups()
+                # TEMP=n/a（温度读失败）时后两组为 None：照常记电压与 SOC，
+                # 温度一栏写 n/a，不要把整行丢掉。
+                temp_text = f"{th}.{tf}" if th is not None else "n/a"
                 v = int(vh, 16)
                 if first_v is None:
                     first_v, first_soc = v, int(sh) * 256 + int(sf)
                 dv = v - first_v
                 ds = int(sh) * 256 + int(sf) - first_soc
                 f.write(f"{now}\tTRACE\tSOC={sh}.{sf}\tVRAW={v}\tMV={mv}\t"
-                        f"TEMP={th}.{tf}\tDV_LSB={dv}\tDSOC_RAW={ds}\n")
+                        f"TEMP={temp_text}\tDV_LSB={dv}\tDSOC_RAW={ds}\n")
                 f.flush()
                 print(f"{now} SOC={sh}.{sf} VCELL=0x{vh}({v}) {mv}mV "
-                      f"dV={dv:+d}LSB dSOC={ds:+d}/256 {th}.{tf}C", flush=True)
+                      f"dV={dv:+d}LSB dSOC={ds:+d}/256 {temp_text}C", flush=True)
 s.close()
 print("port released; samples flushed to", OUT)

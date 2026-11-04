@@ -4,6 +4,7 @@
 #pragma once
 
 #include "esp_err.h"
+#include <stdbool.h>
 
 // 初始化。内部会调 bsp_i2c_init()(幂等)。
 // 芯片不应答时返回 ESP_ERR_NOT_FOUND —— 上层可据此在 UI 上标记该项不可用。
@@ -28,7 +29,16 @@ int bsp_battery_soc_raw(void);
 // 电芯温度,0.1 °C 为单位;读失败返回 -1。
 // CW2017 的 TEMP(0x06) 是无符号 8 bit、LSB=0.5 °C、量程 -40..87.5 °C,
 // 手册换算为 TEMP(°C) = -40 + Value/2。
+// 注意分辨率是 0.5 °C,所以成功时只会取到 -400、-395 ... 875 这些 5 的倍数,
+// -1 永远不是一个合法读数。判断成败一律用 bsp_battery_temp_valid(),
+// 不要各自写 t != -1:若以后把分辨率改成 0.1 °C,-1 就变成合法的 -0.1 °C。
 int bsp_battery_temp_tenths(void);
+
+// 温度读数是否合法。可读区间为 -40.0 .. 87.5 °C。
+static inline bool bsp_battery_temp_valid(int tenths)
+{
+    return tenths >= -400 && tenths <= 875;
+}
 
 // 省电:令 CW2017 进入休眠(写 CONFIG=SLEEP 并回读校验,失败重试一次)。
 // 适合长时间低功耗期间停掉电量计;未初始化时为空操作返回 ESP_OK。

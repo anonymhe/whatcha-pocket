@@ -11,6 +11,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "sfx.h"
+#include <stdio.h>
 
 static const char *TAG = "power";
 
@@ -249,10 +250,14 @@ static void log_battery_trace(void)
     last_mv_raw = mv_raw;
 
     const int t10 = bsp_battery_temp_tenths();
-    const int t_abs = t10 < 0 ? -t10 : t10;
-    ESP_LOGI(TAG, "电量轨迹 SOC=%d.%d/256 VCELL=0x%04X(%d mV) TEMP=%s%d.%d C",
-             soc_raw / 256, soc_raw % 256, (unsigned)mv_raw, bsp_battery_mv(),
-             t10 < 0 ? "-" : "", t_abs / 10, t_abs % 10);
+    // 读失败返回 -1，不能当成 -0.1 °C 打出去 —— 那看起来是个合法读数。
+    char temp[16] = "n/a";
+    if (bsp_battery_temp_valid(t10)) {
+        const int t_abs = t10 < 0 ? -t10 : t10;
+        snprintf(temp, sizeof(temp), "%s%d.%d C", t10 < 0 ? "-" : "", t_abs / 10, t_abs % 10);
+    }
+    ESP_LOGI(TAG, "电量轨迹 SOC=%d.%d/256 VCELL=0x%04X(%d mV) TEMP=%s",
+             soc_raw / 256, soc_raw % 256, (unsigned)mv_raw, bsp_battery_mv(), temp);
 }
 
 // 醒着时的节流：距上次重绘超过当前间隔才重绘一次屏上所有电量视图。
@@ -325,13 +330,18 @@ static void enter_standby(void)
             const int t10 = bsp_battery_temp_tenths();
             // 摄氏度可为负（量程 -40–87.5），整数除法会朝零取整，这里显式取绝对值
             // 再拼小数位，否则 -5 会打成 "-1.-5"。
-            const int t_abs = t10 < 0 ? -t10 : t10;
+            // -1 是读失败，不是 -0.1 °C：不能把它当成合法读数打出去。
+            char temp[16] = "n/a";
+            if (bsp_battery_temp_valid(t10)) {
+                const int t_abs = t10 < 0 ? -t10 : t10;
+                snprintf(temp, sizeof(temp), "%s%d.%d C",
+                         t10 < 0 ? "-" : "", t_abs / 10, t_abs % 10);
+            }
             ESP_LOGI(TAG, "定期唤醒重绘：睡了 %lld ms，屏上电量=%d%%，"
-                          "SOCraw=%d(%d.%d/256)，VCELL=0x%04X(%d mV)，TEMP=%s%d.%d C",
+                          "SOCraw=%d(%d.%d/256)，VCELL=0x%04X(%d mV)，TEMP=%s",
                      slept_us / 1000, s_last_soc,
                      soc_raw, soc_raw / 256, soc_raw % 256,
-                     raw < 0 ? 0u : (unsigned)raw, bsp_battery_mv(),
-                     t10 < 0 ? "-" : "", t_abs / 10, t_abs % 10);
+                     raw < 0 ? 0u : (unsigned)raw, bsp_battery_mv(), temp);
         }
         return;
     }
