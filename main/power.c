@@ -283,8 +283,7 @@ static bsp_wake_source_t standby_wake_source(void)
 
 static void enter_standby(void)
 {
-    // 最后一道闸：走到这里时 USB 仍有可能刚插上（判据与动作之间有最多 500ms 的
-    // 间隔，足够一次枚举）。真要睡了才发现，串口就断在用户面前。
+    // 快路径：判据到动作之间最多 500ms，多半已经能拦住刚插上的线。
     if (bsp_power_usb_host_attached()) {
         refuse_sleep_for_usb();
         return;
@@ -294,6 +293,17 @@ static void enter_standby(void)
         sfx_sleep();
         s_codec_down = true;
         vTaskDelay(pdMS_TO_TICKS(CODEC_SETTLE_MS));
+    }
+
+    // 真正的最后一道闸。上面那 300ms 是这段代码里唯一会阻塞的地方，足够一次
+    // USB 枚举开始；只在它之前检查，等于把「最后一道闸」放在了会被它越过的位置。
+    // 拦下时要把 codec 拉回来：这里已经 sfx_sleep()，而 apply_stage() 只在回到
+    // ACTIVE 时才 sfx_resume()，否则音频会一直哑到下一次按键。
+    if (bsp_power_usb_host_attached()) {
+        sfx_resume();
+        s_codec_down = false;
+        refuse_sleep_for_usb();
+        return;
     }
 
     apply_stage(SLEEP_STAGE_STANDBY);
