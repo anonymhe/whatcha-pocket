@@ -41,7 +41,7 @@ for _dir in \
     "$(_last "$IDF_TOOLS_PATH"/tools/riscv32-esp-elf/*/riscv32-esp-elf/bin)" \
     "$(_last "$IDF_TOOLS_PATH"/tools/ninja/*)" \
     "$(_last "$IDF_TOOLS_PATH"/tools/cmake/*/bin)" \
-    "$(_last "$IDF_TOOLS_PATH"/tools/ccache/*/)" \
+    "$(_last "$IDF_TOOLS_PATH"/tools/ccache/*/*/)" \
     "$IDF_PYTHON_ENV_PATH/Scripts" \
     "$IDF_PATH/tools"
 do
