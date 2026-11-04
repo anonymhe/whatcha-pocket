@@ -136,6 +136,8 @@ static int cw_profile_matches(bool *matches) {
 }
 
 // Profile 必须在睡眠态逐字节写入，读回校验后置 UPDATE_FLAG，再重启计算。
+// 任何一步失败都要尽力把芯片拉回 ACTIVE 再返回：留在 SLEEP 里的电量计对下一次
+// 上电是「不应答」，会被当成芯片不在位，故障原因反而被掩盖掉。
 static int cw_update_profile(void) {
     uint8_t val = 0;
     if (cw_enter_sleep() != 0) return -1;
@@ -143,22 +145,29 @@ static int cw_update_profile(void) {
     for (size_t i = 0; i < CW_PROFILE_SIZE; i++) {
         if (cw_write((uint8_t)(CW_REG_PROFILE + i), s_battery_profile[i]) != 0) {
             ESP_LOGE(TAG, "写 profile 失败:index=%u", (unsigned)i);
-            return -1;
+            goto fail;
         }
     }
 
     for (size_t i = 0; i < CW_PROFILE_SIZE; i++) {
-        if (cw_read((uint8_t)(CW_REG_PROFILE + i), &val, 1) != 0) return -1;
+        if (cw_read((uint8_t)(CW_REG_PROFILE + i), &val, 1) != 0) goto fail;
         if (val != s_battery_profile[i]) {
             ESP_LOGE(TAG, "profile 校验失败:index=%u expected=0x%02X actual=0x%02X",
                      (unsigned)i, s_battery_profile[i], val);
-            return -1;
+            goto fail;
         }
     }
 
-    if (cw_read(CW_REG_SOC_ALERT, &val, 1) != 0) return -1;
-    if (cw_write(CW_REG_SOC_ALERT, val | CW_UPDATE_FLAG) != 0) return -1;
+    if (cw_read(CW_REG_SOC_ALERT, &val, 1) != 0) goto fail;
+    if (cw_write(CW_REG_SOC_ALERT, val | CW_UPDATE_FLAG) != 0) goto fail;
     return cw_enter_active();
+
+fail:
+    // 尽力唤醒。唤醒本身失败也改变不了返回值，只补一条日志。
+    if (cw_enter_active() != 0) {
+        ESP_LOGE(TAG, "profile 写入失败后未能把电量计唤回 ACTIVE");
+    }
+    return -1;
 }
 
 // 首次计算期间 SOC 可能暂时大于 100；最多等待 5 秒再判定初始化失败。
