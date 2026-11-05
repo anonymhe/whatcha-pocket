@@ -44,9 +44,12 @@ BILINGUAL_PRODUCT_DOCS = {
 # parenthetical glosses after their English name in English default prose,
 # exactly like the 简体中文 language-switch label, and must not trip the
 # English-prose check.
+# Order matters: longer names come before the shorter ones they contain, so
+# 猹工坊 is stripped whole instead of leaving 工坊 behind after 猹.
 PRODUCT_NAME_GLOSSES = (
     "口袋上新",
     "口袋常驻",
+    "猹工坊",
     "观猹",
     "猹",
 )
