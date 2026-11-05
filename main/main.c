@@ -27,12 +27,18 @@ static void card_ready(void) { page_open(PAGE_HOME); s_ready = true; }
 typedef struct { uint8_t btn, ev; } key_evt_t;
 static QueueHandle_t s_keyq;
 
+// 省电状态（s_stage / s_codec_down）只归 LVGL 任务所有：power_service() 在这里跑，
+// power_key_activity() 也必须在这里跑。放进 esp_timer 的按键回调里会让 apply_stage()
+// 从两个任务同时改背光和 codec，唤醒/调暗就变成时序依赖的行为。
 static void key_poll(lv_timer_t *t)
 {
     (void)t;
     key_evt_t e;
-    while (s_keyq && xQueueReceive(s_keyq, &e, 0) == pdTRUE)
+    while (s_keyq && xQueueReceive(s_keyq, &e, 0) == pdTRUE) {
+        // 调暗或已入睡时，第一下按键只用来叫醒；它的松开事件同样要丢掉。
+        if (power_key_activity()) continue;
         page_key((bsp_btn_t)e.btn, (bsp_btn_ev_t)e.ev);
+    }
 }
 
 // 省电策略都在 power.c 里；这里只负责把「开机动画是否结束」告诉它。
@@ -49,8 +55,7 @@ static void on_key(bsp_btn_t btn, bsp_btn_ev_t ev, void *user)
     if (!s_ready) { if (!s_skip_us) s_skip_us = esp_timer_get_time(); boot_anim_skip(); return; }
     int64_t now = esp_timer_get_time();
     if (s_skip_us && now - s_skip_us < 600000) return;
-    // 调暗或已入睡时，第一下按键只用来叫醒；它的松开事件同样要丢掉。
-    if (power_key_activity()) return;
+    // 叫醒与省电状态切换在 key_poll()（LVGL 任务）里做，这里只投递原始事件。
     key_evt_t e = { (uint8_t)btn, (uint8_t)ev };
     xQueueSend(s_keyq, &e, 0);
 }
