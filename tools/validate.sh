@@ -32,6 +32,10 @@ run_static_checks() {
         tests/test_sleep_policy.c main/sleep_policy.c \
         -o "${test_dir}/test_sleep_policy"
     "${test_dir}/test_sleep_policy"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/test_page_transition.c main/page_transition.c \
+        -o "${test_dir}/test_page_transition"
+    "${test_dir}/test_page_transition"
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_battery_profile.py
     python3 tests/test_verify_firmware.py
     rm -rf "${test_dir}"

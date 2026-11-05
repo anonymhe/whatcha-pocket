@@ -1,5 +1,6 @@
 // main/pages.c —— 最小页面路由
 #include "pages.h"
+#include "page_transition.h"
 #include "sfx.h"
 #include "esp_log.h"
 #include "esp_system.h"
@@ -49,11 +50,29 @@ static bool s_in_tr;                     // 转场进行中（期间吞按键）
 
 bool page_busy(void) { return s_in_tr; }
 
+// 顺序是「先拆旧屏、再建新屏」：幕布屏此刻是活动屏，旧屏已不是活动屏，
+// LVGL 允许删除它，于是任何时刻只与幕布并存一张重屏。反过来先建新屏会让
+// 「旧重屏 + 幕布 + 新重屏」三张屏同时占着池子，正是转场要避开的内存峰值。
+// 顺序本身抽到 page_transition.c，由主机测试断言。
 static void apply_page(int idx)
 {
     const page_t *old = (s_cur >= 0) ? PAGES[s_cur] : NULL;
-    PAGES[idx]->enter();                 // 先建并载入新屏
-    if (old && old->exit) old->exit();   // 再删旧屏（LVGL 不允许删当前活动屏）
+
+    page_act_t plan[PAGE_ACT_COUNT];
+    const int steps = page_transition_plan(old != NULL, plan);
+    for (int i = 0; i < steps; i++) {
+        switch (plan[i]) {
+        case PAGE_ACT_OLD_EXIT:
+            if (old && old->exit) old->exit();
+            break;
+        case PAGE_ACT_NEW_ENTER:
+            PAGES[idx]->enter();
+            break;
+        default:
+            break;
+        }
+    }
+
     s_cur = idx;
     ESP_LOGI(TAG, "-> %s  free heap %lu", PAGES[idx]->name,
              (unsigned long)esp_get_free_heap_size());

@@ -15,6 +15,7 @@ set(WATCHA_FONT_SRCS
 idf_component_register(
     SRCS "main.c"
          "pages.c"
+         "page_transition.c"
          "pages/page_lab.c"
          "pages/page_home.c"
          "pages/page_fortune.c"
