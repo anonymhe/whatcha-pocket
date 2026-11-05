@@ -7,7 +7,7 @@
 WATCHA POCKET apps come in two groups:
 
 - **Pocket Classics (口袋常驻)**: the 6 built-in apps on the home screen. Fixed; do not modify.
-- **Pocket New (口袋上新)**: the continuously updated app list. **Long-press ▲ on the home screen** to open it, press OK to launch an app, long-press OK inside an app to return.
+- **Pocket New (口袋上新)**: the continuously updated app list. Select the 猹工坊 card on the home screen and press OK to open it, press OK to launch an app, long-press OK inside an app to return.
 
 Every new app goes into Pocket New. This file holds the coding rules; how to talk to and guide the user is in [`CHACKER.md`](../../CHACKER.md).
 

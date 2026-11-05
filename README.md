@@ -14,7 +14,8 @@ WATCH IT. POCKET IT. HACK IT.
 WATCHA POCKET 是观猹的口袋掌机：一块 240×320 像素屏、三个按键，装着一群小猹。这里是它的全部固件代码。
 
 - **口袋常驻**：首页的 6 个出厂玩法。
-- **口袋上新**：持续更新的新玩法。首页**长按 ▲** 进入，在玩法里长按确认返回。
+- **口袋上新**：持续更新的新玩法。首页选中「猹工坊」卡片按确认进入，在玩法里长按确认返回。
+- **身份同步**：首页**长按 ▲** 打开同步页，用微信扫码连接观猹小程序。
 
 6 只小猹，只是开始。下一个玩法，由你来写。
 
@@ -63,7 +64,8 @@ idf.py -p <端口> flash
 WATCHA POCKET is Watcha's pocket handheld: a 240×320 pixel screen, three buttons and a crew of chas. This repository is its complete firmware.
 
 - **Pocket Classics (口袋常驻)**: the 6 built-in apps on the home screen.
-- **Pocket New (口袋上新)**: the continuously updated app list. **Long-press ▲** on the home screen to open it; long-press OK inside an app to return.
+- **Pocket New (口袋上新)**: the continuously updated app list. Select the 猹工坊 card on the home screen and press OK to open it; long-press OK inside an app to return.
+- **Profile sync**: **long-press ▲** on the home screen to open the sync screen and scan the QR code with WeChat to connect the Watcha mini-program.
 
 ### Build a new app without coding
 
