@@ -34,7 +34,7 @@ The tracked `dependencies.lock` pins Managed Component resolution. After changin
 
 Firmware validation uses a fresh temporary build directory and an isolated `sdkconfig` generated from the tracked defaults. It does not consume or overwrite a developer's root `sdkconfig`, and it copies only the verified merged image to `build/FoloToy-AI-Passport-full.bin`. The gate also enforces the [mini-program BLE compatibility contract](ble-recovery-compatibility.md): protected partition addresses, application size, partition-table MD5, absence of protected payload data, and the Recovery bootloader hook.
 
-The baseline also has a hardware-independent logic test:
+The baseline also has hardware-independent logic tests:
 
 ```bash
 cc -std=c11 -Wall -Wextra -Werror -Imain \
@@ -42,6 +42,14 @@ cc -std=c11 -Wall -Wextra -Werror -Imain \
   -o /tmp/test_ui_pixel_math
 /tmp/test_ui_pixel_math
 ```
+
+`tests/test_page_transition.c` and `tests/test_countdown.c` cover two pieces of
+timing-and-ordering logic that are easy to get subtly wrong and hard to notice
+on a device: the order in which a screen transition tears down the old screen
+and builds the new one, and the deadline-based countdown behind the Pomodoro
+timer. Both modules are plain C with no LVGL or ESP-IDF dependency, so they run
+on the host. `validate.sh` already builds and runs them with
+`-Wall -Wextra -Werror`.
 
 Use the unified validation entry point:
 

@@ -31,7 +31,7 @@ target 或已跟踪 defaults 时，先保留有意的本地设置，再运行
 
 固件门禁使用全新的临时构建目录，并从仓库 `sdkconfig.defaults` 生成隔离的 `sdkconfig`。它不会读取或覆盖开发者根目录的 `sdkconfig`，只把验证通过的合并镜像复制到 `build/FoloToy-AI-Passport-full.bin`。门禁同时强制检查[小程序 BLE 兼容契约](ble-recovery-compatibility.zh_CN.md)：保护分区地址、应用大小、分区表 MD5、保护区数据不入包，以及 Recovery bootloader hook。
 
-当前基线含一个可独立运行的纯逻辑测试：
+当前基线含若干可独立运行的纯逻辑测试：
 
 ```bash
 cc -std=c11 -Wall -Wextra -Werror -Imain \
@@ -39,6 +39,8 @@ cc -std=c11 -Wall -Wextra -Werror -Imain \
   -o /tmp/test_ui_pixel_math
 /tmp/test_ui_pixel_math
 ```
+
+`tests/test_page_transition.c` 与 `tests/test_countdown.c` 覆盖两处「写错了不容易发现、在真机上也看不出来」的时序与顺序逻辑：切页时先拆旧屏还是先建新屏，以及番茄钟背后按截止时刻结算的倒计时。两个模块都是不依赖 LVGL 与 ESP-IDF 的纯 C，因此能在主机上跑；`validate.sh` 已经用 `-Wall -Wextra -Werror` 编译并执行它们。
 
 统一验证入口：
 
