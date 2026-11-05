@@ -6,6 +6,16 @@
 
 ## Unreleased
 
+- The first key press after the screen dims now wakes the device without also activating whatever was selected. The wake-up call used to run inside the button timer callback, which meant backlight and audio-codec changes could be made from two tasks at once while the screen task was reading the same power state, so wake and dim behaviour depended on timing. Button events are now only queued from the callback; the wake check and the page dispatch both run in the screen task that already owns the power state.
+
+- Screen switches now free the outgoing screen before building the incoming one. The transition inserts a lightweight curtain screen precisely so the old screen can be released first, but the old screen was being torn down after the new one was already built, so the memory peak the curtain exists to avoid still happened: outgoing screen, curtain and incoming screen were all resident at once. Leaving a page before entering the next also means each page's own cleanup now runs while it is still the visible screen rather than after it has been replaced.
+
+- Sound effects can no longer lose a request or play the wrong pitch. Playback requests were handed to the audio task as two separate shared values, so a task switch between reading and clearing them could pair an older sound with a newer argument, or drop a request submitted in between. A request is now a single queued command carrying both its id and its argument, and a one-slot queue keeps the deliberate "newest sound wins" behaviour for rapid input.
+
+- The Pomodoro countdown now follows elapsed time instead of counting its own callbacks. It subtracted one second per timer callback, so a stalled interface or a late callback made a 25-minute session run longer than 25 minutes. The remaining time is now derived from a monotonic deadline, pausing settles the remainder and resuming starts a fresh deadline, and the timer only refreshes the display.
+
+- Corrected which key opens Pocket New. The documentation and the in-app guide told readers to long-press ▲ on the home screen, but that opens the profile sync screen; Pocket New is the 猹工坊 card selected with OK. The README, CHACKER's guidance and the Pocket New spec now match the firmware.
+
 ## v0.1.5 - 2026-11-04
 
 - The device no longer enters light sleep while a USB host is talking to it. On this chip light sleep powers the USB-Serial-JTAG pad and clock down, so the serial port and the enumeration disappear together, which used to cut a debugging session off mid-standby. Idle standby is now refused whenever a real host is on the bus (SOF packets are arriving), and a ten minute grace period runs from the last moment a host was seen, so pulling the cable does not send the device to sleep immediately; a charger or power bank is not a host and does not block the sleep. A refusal leaves the backlight dimmed rather than brightening it, and deep sleep goes through the same gate.
