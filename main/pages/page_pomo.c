@@ -1,6 +1,7 @@
 // main/pages/page_pomo.c — 番茄猹：番茄钟
 #include "pages.h"
 #include "app_ui.h"
+#include "countdown.h"
 #include "sfx.h"
 #include "esp_timer.h"
 #include <stdio.h>
@@ -52,8 +53,12 @@ static lv_timer_t *s_tick_timer, *s_done_timer, *s_phase2_timer;
 static state_t s_state;
 static int  s_dur_idx;       /* 0/1/2 → 15/25/45 分 */
 static int  s_total_secs;
-static int  s_remain;        /* 专注剩余秒 */
-static int  s_rest_remain;   /* 休息剩余秒 */
+static int  s_remain;        /* 专注剩余秒（由截止时刻算出，只用于显示） */
+static int  s_rest_remain;   /* 休息剩余秒（同上） */
+/* 截止时刻（esp_timer 单调微秒）。倒计时按「截止时刻减当前时刻」算，而不是
+ * 每次回调减 1 秒：UI 卡顿或回调迟到时不会把真实流逝的时间算丢，
+ * 25 分钟的专注就真的是 25 分钟。0 = 未计时。 */
+static int64_t s_focus_deadline_us, s_rest_deadline_us;
 
 /* ---- 工具函数 ---- */
 
@@ -184,13 +189,25 @@ static void show_dur(void)
 
 static void enter_state(state_t st);
 
-/* 每秒 tick */
+/* 倒计时按截止时刻结算（见 countdown.h）：tick 只负责重画，不负责计时。 */
+static int secs_left(int64_t deadline_us)
+{
+    return countdown_left_secs(deadline_us, esp_timer_get_time());
+}
+
+static int64_t deadline_from(int secs)
+{
+    return countdown_deadline_from(esp_timer_get_time(), secs);
+}
+
+/* 每秒 tick：只按截止时刻重算剩余，不改时间本身 */
 static void tick_cb(lv_timer_t *t)
 {
     (void)t;
     if (s_state == ST_FOCUS) {
-        s_remain--;
+        s_remain = secs_left(s_focus_deadline_us);
         if (s_remain <= 0) {
+            s_remain = 0;
             enter_state(ST_DONE);
             return;
         }
@@ -198,8 +215,9 @@ static void tick_cb(lv_timer_t *t)
         float pct = 1.0f - (float)s_remain / s_total_secs;
         progress_update(pct, C_GREEN);
     } else if (s_state == ST_REST) {
-        s_rest_remain--;
+        s_rest_remain = secs_left(s_rest_deadline_us);
         if (s_rest_remain <= 0) {
+            s_rest_remain = 0;
             enter_state(ST_IDLE);
             return;
         }
@@ -234,6 +252,8 @@ static void enter_state(state_t st)
     case ST_IDLE:
         s_remain = DUR_OPTS[s_dur_idx];
         s_total_secs = s_remain;
+        s_focus_deadline_us = 0;
+        s_rest_deadline_us = 0;
         show_time(s_remain, C_TEXT);
         show_state("等待开始", C_MUTED);
         show_hint("小猹曰：逝者如斯夫");
@@ -243,6 +263,8 @@ static void enter_state(state_t st)
         break;
 
     case ST_FOCUS:
+        /* 从待机开始，或从暂停继续：都以「当前剩余」重开一个截止时刻 */
+        s_focus_deadline_us = deadline_from(s_remain);
         lv_obj_add_flag(s_dur_lbl, LV_OBJ_FLAG_HIDDEN);
         show_time(s_remain, C_GREEN);
         show_state("专注中", C_GREEN);
@@ -255,6 +277,9 @@ static void enter_state(state_t st)
         break;
 
     case ST_PAUSE:
+        /* 暂停 = 把剩余时间从截止时刻结算下来并作废截止时刻 */
+        s_remain = countdown_pause_secs(s_focus_deadline_us, esp_timer_get_time());
+        s_focus_deadline_us = 0;
         show_time(s_remain, C_MUTED);
         show_state("已暂停", C_GOLD);
         show_hint("小猹曰：逝者如斯夫");
@@ -267,6 +292,7 @@ static void enter_state(state_t st)
 
     case ST_DONE:
         /* 闪绿框 220ms → 进休息 */
+        s_focus_deadline_us = 0;   /* 专注已结束，作废截止时刻 */
         lv_obj_set_style_border_color(s_scr, lv_color_hex(C_GREEN), 0);
         lv_obj_set_style_border_width(s_scr, 2, 0);
         sfx_play(SFX_CLEAR);
@@ -280,6 +306,7 @@ static void enter_state(state_t st)
 
     case ST_REST:
         s_rest_remain = REST_SECS;
+        s_rest_deadline_us = deadline_from(s_rest_remain);
         progress_clear();
         show_time(s_rest_remain, C_GOLD);
         show_state("休息中", C_GOLD);

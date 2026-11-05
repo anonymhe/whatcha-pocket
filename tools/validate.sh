@@ -36,6 +36,10 @@ run_static_checks() {
         tests/test_page_transition.c main/page_transition.c \
         -o "${test_dir}/test_page_transition"
     "${test_dir}/test_page_transition"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/test_countdown.c main/countdown.c \
+        -o "${test_dir}/test_countdown"
+    "${test_dir}/test_countdown"
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_battery_profile.py
     python3 tests/test_verify_firmware.py
     rm -rf "${test_dir}"
