@@ -5,6 +5,7 @@
 #include "bsp_audio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/queue.h"
 #include "esp_log.h"
 #include <math.h>
 #include <stdint.h>
@@ -83,10 +84,12 @@ static note_t s_dyn[3];
 static TaskHandle_t s_task;
 static volatile bool s_ready;
 static volatile int  s_status = 0;
-static volatile int  s_req = -1;       // 待播：SFX id 或 DYN_*
-static volatile int  s_req_arg;
-static volatile int  s_pending = -1;   // 音频还没就绪时先记下（开机音）
-static volatile bool s_sleep_req, s_resume_req;   // 省电：10 分钟无按键停 codec / 按键后重开（只由 codec 所属的 sfx 任务执行）
+// 播放请求走一条深度 1 的队列：id 与 arg 作为一条命令整体投递，音频任务整条取出，
+// 不会出现「旧 id 配上新 arg」或「刚投递的请求被清掉」。xQueueOverwrite 就是
+// 「后来的盖掉还没播的」——这正是音效想要的语义（连击时只留最新一下）。
+typedef struct { int id, arg; } sfx_cmd_t;
+static QueueHandle_t s_q;
+static volatile bool s_sleep_req, s_resume_req;   // 省电：停 codec / 按键后重开（只由 codec 所属的 sfx 任务执行）
 static bool s_slept;                              // codec 已下电（只在 sfx 任务里读写）
 static int16_t s_buf[CHUNK];
 static uint32_t s_lfsr = 0xACE1u;
@@ -143,7 +146,7 @@ static bool play_seq(const note_t *seq)
                 s_buf[k] = (int16_t)(s * 32767.0f);
             }
             bsp_audio_write(s_buf, cnt * sizeof(int16_t));
-            if (s_req >= 0) return true;
+            if (s_q && uxQueueMessagesWaiting(s_q) > 0) return true;
         }
     }
     return false;
@@ -163,11 +166,13 @@ static void sfx_task(void *arg)
     bsp_audio_set_volume(100);
     s_ready = true;
     s_status = 3;
-    if (s_pending >= 0 && s_req < 0) { s_req = s_pending; }
-    s_pending = -1;
     ESP_LOGI(TAG, "ready");
     for (;;) {
-        if (s_req < 0 && !s_sleep_req && !s_resume_req) ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        sfx_cmd_t cmd;
+        // 没有待播命令也没有省电请求时睡下去。整条命令一次取走，队列空即代表「没有新请求」。
+        if (!s_sleep_req && !s_resume_req && uxQueueMessagesWaiting(s_q) == 0) {
+            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        }
         // 省电：codec 下电 / 重开都在本任务里做,避免和播放写入 codec 抢同一个设备。
         if (s_resume_req) {
             s_resume_req = false;
@@ -186,8 +191,8 @@ static void sfx_task(void *arg)
             s_sleep_req = false;
             if (!s_slept) { bsp_audio_sleep(); s_slept = true; ESP_LOGI(TAG, "sleep"); }
         }
-        int id = s_req, arg2 = s_req_arg;
-        s_req = -1;
+        if (xQueueReceive(s_q, &cmd, 0) != pdTRUE) continue;
+        int id = cmd.id, arg2 = cmd.arg;
         if (id < 0) continue;
         if (s_slept) continue;   // codec 已下电：丢弃播放请求,等按键触发 sfx_resume 重开
         const note_t *seq = NULL;
@@ -222,16 +227,21 @@ static void sfx_task(void *arg)
 
 void sfx_init(void)
 {
-    if (!s_task) xTaskCreate(sfx_task, "sfx", 4096, NULL, 4, &s_task);
+    if (s_task) return;
+    s_q = xQueueCreate(1, sizeof(sfx_cmd_t));   // 深度 1：只保留最新一条
+    if (!s_q) { ESP_LOGW(TAG, "queue create failed, sfx disabled"); s_status = 1; return; }
+    xTaskCreate(sfx_task, "sfx", 4096, NULL, 4, &s_task);
 }
 
 static void request(int id, int arg)
 {
-    if (!s_task) return;
-    if (!s_ready) { s_pending = id; s_req_arg = arg; return; }
-    s_req_arg = arg;
-    s_req = id;
-    xTaskNotifyGive(s_task);
+    if (!s_q) return;
+    // 队列在 sfx_init() 里先于任务创建，所以「音频还没就绪」时投递也是安全的：
+    // 任务完成初始化后自然会取走这一条，不需要额外的待播变量。
+    const sfx_cmd_t cmd = { id, arg };
+    xQueueOverwrite(s_q, &cmd);
+    // 只有音频就绪后才通知：init 失败时任务已自删，对陈旧句柄 notify 是未定义行为。
+    if (s_ready) xTaskNotifyGive(s_task);
 }
 
 void sfx_sleep(void)
